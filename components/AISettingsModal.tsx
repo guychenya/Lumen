@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useAI } from '../context/AIContext';
 import { Button } from './ui/Button';
@@ -77,14 +78,15 @@ export const AISettingsModal: React.FC = () => {
     
     setIsLoadingModels(true);
     try {
-      const response = await fetch(`${localConfig.baseUrl}/api/tags`);
+      // Simple fetch to list models
+      const response = await fetch(`${localConfig.baseUrl.replace(/\/$/, '')}/api/tags`);
       if (!response.ok) throw new Error('Failed to fetch');
       
       const data: OllamaTagsResponse = await response.json();
       setAvailableModels(data.models.map(m => m.name));
     } catch (error) {
-      // If fetch fails, fallback to some defaults but allow manual entry
-      console.warn("Failed to fetch Ollama models, likely CORS or offline.");
+      console.warn("Failed to fetch Ollama models:", error);
+      // Fallback defaults
       setAvailableModels(['llama3', 'mistral', 'gemma', 'qwen']);
     } finally {
       setIsLoadingModels(false);
@@ -107,10 +109,8 @@ export const AISettingsModal: React.FC = () => {
     setSettingsOpen(false);
   };
 
-  // CRITICAL FIX: Do not render if settings are closed
   if (!isSettingsOpen) return null;
 
-  // Helper to determine if we should show API Key field
   const needsApiKey = localConfig.provider !== 'ollama';
 
   return (
@@ -264,27 +264,26 @@ export const AISettingsModal: React.FC = () => {
             </div>
 
             {/* Connection Feedback */}
-            <div className="pt-4 border-t border-[#2A2A2A] flex items-center justify-between">
-                <div className="flex-1 mr-4">
-                    {testResult && (
-                        <div className={`text-xs flex items-start gap-2 ${testResult.success ? 'text-green-400' : 'text-red-400'}`}>
-                            {testResult.success ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
-                            <span>{testResult.message}</span>
-                        </div>
-                    )}
-                    {!testResult && (
-                        <span className="text-xs text-gray-500">Status: Untested</span>
-                    )}
+            <div className="pt-4 border-t border-[#2A2A2A]">
+                <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-gray-400">Connection Status</span>
+                    <Button 
+                        variant="secondary" 
+                        size="sm" 
+                        onClick={handleTestConnection}
+                        disabled={isTesting}
+                        className="h-7 text-xs"
+                    >
+                        {isTesting ? 'Verifying...' : 'Test Connection'}
+                    </Button>
                 </div>
-                <Button 
-                    variant="secondary" 
-                    size="sm" 
-                    onClick={handleTestConnection}
-                    disabled={isTesting}
-                    className="shrink-0"
-                >
-                    {isTesting ? 'Testing...' : 'Test Connection'}
-                </Button>
+                
+                {testResult && (
+                    <div className={`p-3 rounded-lg text-xs flex items-start gap-2 ${testResult.success ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+                        {testResult.success ? <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" /> : <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />}
+                        <span className="leading-relaxed">{testResult.message}</span>
+                    </div>
+                )}
             </div>
 
           </div>
