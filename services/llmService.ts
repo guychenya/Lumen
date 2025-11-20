@@ -35,7 +35,13 @@ export class LLMService {
             } catch (e) {}
         }
         let msg = error instanceof Error ? error.message : String(error);
-        if (msg.includes('Failed to fetch')) msg += " (Ensure Ollama is running with OLLAMA_ORIGINS='*')";
+        if (msg.includes('Failed to fetch')) {
+             if (typeof window !== 'undefined' && window.location.protocol === 'https:' && baseUrl.includes('http:')) {
+                 msg += " (Mixed Content: Browser blocked HTTP request. Use a tunnel or run locally.)";
+             } else {
+                 msg += " (Ensure Ollama is running with OLLAMA_ORIGINS='*')";
+             }
+        }
         return { success: false, message: `Connection Failed: ${msg}` };
       }
     }
@@ -99,11 +105,27 @@ export class LLMService {
 
     try {
         if (provider === 'ollama') {
-            const response = await fetch(`${this.getCleanBaseUrl(baseUrl)}/api/chat`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ model, messages, stream: true })
-            });
+            let targetUrl = `${this.getCleanBaseUrl(baseUrl)}/api/chat`;
+            const body = JSON.stringify({ model, messages, stream: true });
+            const headers = { 'Content-Type': 'application/json' };
+            
+            let response: Response;
+            
+            try {
+                response = await fetch(targetUrl, { method: 'POST', headers, body });
+            } catch (fetchError: any) {
+                 // Attempt fallback if using localhost (fixes IPv6 issues)
+                 if (targetUrl.includes('localhost')) {
+                     targetUrl = targetUrl.replace('localhost', '127.0.0.1');
+                     try {
+                        response = await fetch(targetUrl, { method: 'POST', headers, body });
+                     } catch (retryError) {
+                        throw fetchError; // Throw original error if fallback fails
+                     }
+                 } else {
+                     throw fetchError;
+                 }
+            }
             
             if (!response.body) throw new Error('No response body');
             const reader = response.body.getReader();
@@ -193,17 +215,11 @@ export class LLMService {
                 const { done, value } = await reader.read();
                 if (done) break;
                 buffer += decoder.decode(value, { stream: true });
-                // Gemini returns a JSON array like [{...}, \n {...}]
-                // We need to parse these objects. 
-                // Simple regex for this context: find objects { ... }
-                // Note: Production apps should use a proper stream parser.
                 let match;
-                const regex = /"text":\s*"([^"]*)"/g; // Basic extraction
+                const regex = /"text":\s*"([^"]*)"/g; 
                 while ((match = regex.exec(buffer)) !== null) {
-                     // Simple unescape might be needed
                      yield match[1].replace(/\\n/g, '\n').replace(/\\"/g, '"');
                 }
-                // Clear buffer periodically or use better parsing if precise
                 if (buffer.length > 10000) buffer = buffer.slice(-1000); 
              }
         }
@@ -214,7 +230,18 @@ export class LLMService {
 
     } catch (error: any) {
         console.error("Streaming Error:", error);
-        yield `\n[Error: ${error.message}]`;
+        let msg = error.message || String(error);
+        
+        if (msg.includes('Failed to fetch')) {
+             // Check for Mixed Content (HTTPS -> HTTP)
+             if (typeof window !== 'undefined' && window.location.protocol === 'https:' && baseUrl?.includes('http:')) {
+                 msg += " (Mixed Content Error: Browser blocked HTTP request from HTTPS. Use a tunnel or run app locally.)";
+             } else {
+                 msg += " (Ensure Ollama is running with OLLAMA_ORIGINS='*')";
+             }
+        }
+        
+        yield `\n[Error: ${msg}]`;
     }
   }
 }
