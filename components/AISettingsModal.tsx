@@ -60,7 +60,6 @@ export const AISettingsModal: React.FC = () => {
   useEffect(() => {
     if (localConfig.provider === 'ollama') {
       fetchOllamaModels();
-      // Check Mixed Content: Running on HTTPS but trying to access HTTP
       if (typeof window !== 'undefined' && window.location.protocol === 'https:' && localConfig.baseUrl?.includes('http:')) {
           setIsMixedContent(true);
       } else {
@@ -81,11 +80,10 @@ export const AISettingsModal: React.FC = () => {
     setIsLoadingModels(true);
     try {
       const service = new LLMService(localConfig);
-      // We use verifyConnection because it has all the fallback logic
       const result = await service.verifyConnection();
       if (result.success) {
-          // If verified, we try to fetch tags properly
-          const res = await fetch(`${localConfig.baseUrl.replace(/\/$/, '')}/api/tags`);
+          const cleanUrl = localConfig.baseUrl.replace(/\/$/, '').replace('localhost', '127.0.0.1');
+          const res = await fetch(`${cleanUrl}/api/tags`);
           const data: OllamaTagsResponse = await res.json();
           setAvailableModels(data.models.map(m => m.name));
       } else {
@@ -184,7 +182,7 @@ export const AISettingsModal: React.FC = () => {
                     <Input
                         value={localConfig.baseUrl}
                         onChange={(e) => setLocalConfig({ ...localConfig, baseUrl: e.target.value })}
-                        placeholder="http://localhost:11434"
+                        placeholder="http://127.0.0.1:11434"
                     />
                     {isMixedContent && (
                         <div className="flex gap-2 p-3 rounded bg-red-500/20 border border-red-500/50 text-red-200 text-xs items-start">
@@ -193,8 +191,7 @@ export const AISettingsModal: React.FC = () => {
                                 <strong>Connection Blocked:</strong> You are using this app via HTTPS but trying to connect to a local HTTP server.
                                 <ul className="list-disc pl-4 mt-1 text-red-300/80 space-y-0.5">
                                     <li>Browsers block this for security (Mixed Content).</li>
-                                    <li><strong>Solution 1:</strong> Run this web app on http://localhost:port</li>
-                                    <li><strong>Solution 2:</strong> Use a tunnel (ngrok) for Ollama.</li>
+                                    <li><strong>Solution:</strong> Run this web app on http://localhost:port or use ngrok.</li>
                                 </ul>
                             </div>
                         </div>

@@ -1,7 +1,9 @@
-export type AIProvider = 'ollama' | 'openai' | 'anthropic' | 'gemini';
+
+export type AIProviderId = 'ollama' | 'openai' | 'anthropic' | 'gemini';
+export type ConnectionStatus = 'connected' | 'checking' | 'disconnected';
 
 export interface AIConfig {
-  provider: AIProvider;
+  provider: AIProviderId;
   apiKey?: string;
   baseUrl?: string; // Essential for Ollama (e.g., http://localhost:11434)
   modelName: string;
@@ -20,4 +22,11 @@ export interface OllamaModel {
 
 export interface OllamaTagsResponse {
   models: OllamaModel[];
+}
+
+export interface Note {
+  id: string;
+  title: string;
+  content: string;
+  updatedAt: number;
 }

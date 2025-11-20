@@ -9,8 +9,20 @@ export class LLMService {
   }
 
   private getCleanBaseUrl(url?: string): string {
-    if (!url) return 'http://localhost:11434';
-    return url.replace(/\/$/, '');
+    if (!url) return 'http://127.0.0.1:11434';
+    // Force 127.0.0.1 to avoid IPv6 issues with 'localhost' on some systems
+    let clean = url.replace(/\/$/, '');
+    if (clean.includes('localhost')) {
+        clean = clean.replace('localhost', '127.0.0.1');
+    }
+    return clean;
+  }
+
+  private checkMixedContent(url: string): string | null {
+    if (typeof window !== 'undefined' && window.location.protocol === 'https:' && url.includes('http:')) {
+        return "Security Error: You are accessing this app via HTTPS but trying to connect to an insecure HTTP server (Ollama). Browsers block this. Please run this web app on HTTP (http://localhost:...) or use a tunneling service (ngrok) for Ollama.";
+    }
+    return null;
   }
 
   /**
@@ -21,26 +33,19 @@ export class LLMService {
 
     // --- OLLAMA ---
     if (provider === 'ollama') {
-      let baseUrl = this.getCleanBaseUrl(this.config.baseUrl);
+      const baseUrl = this.getCleanBaseUrl(this.config.baseUrl);
+      
+      const mixedContentError = this.checkMixedContent(baseUrl);
+      if (mixedContentError) return { success: false, message: mixedContentError };
+
       try {
         const res = await this.fetchOllamaTags(baseUrl);
         if (res.ok) return { success: true, message: 'Connected to Ollama successfully.' };
         return { success: false, message: `Ollama connected but returned error: ${res.status}` };
       } catch (error: any) {
-        // IPv4 Fallback check
-        if (baseUrl.includes('localhost')) {
-            try {
-                const res = await this.fetchOllamaTags(baseUrl.replace('localhost', '127.0.0.1'));
-                if (res.ok) return { success: true, message: 'Connected via 127.0.0.1 fallback.' };
-            } catch (e) {}
-        }
         let msg = error instanceof Error ? error.message : String(error);
         if (msg.includes('Failed to fetch')) {
-             if (typeof window !== 'undefined' && window.location.protocol === 'https:' && baseUrl.includes('http:')) {
-                 msg += " (Mixed Content: Browser blocked HTTP request. Use a tunnel or run locally.)";
-             } else {
-                 msg += " (Check: Is Ollama running? Did you set OLLAMA_ORIGINS='*'?)";
-             }
+            msg += " (Ensure Ollama is running and OLLAMA_ORIGINS='*' is set)";
         }
         return { success: false, message: `Connection Failed: ${msg}` };
       }
@@ -90,7 +95,6 @@ export class LLMService {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3000);
     try {
-        // STRICT CONFIGURATION FOR LOCALHOST FETCHING
         return await fetch(`${baseUrl}/api/tags`, { 
             method: 'GET',
             headers: {
@@ -98,7 +102,7 @@ export class LLMService {
                 'Accept': 'application/json'
             },
             mode: 'cors',
-            credentials: 'omit', // Crucial: prevents browser from sending cookies which can trigger strict CORS
+            credentials: 'omit',
             signal: controller.signal 
         });
     } finally {
@@ -115,34 +119,22 @@ export class LLMService {
 
     try {
         if (provider === 'ollama') {
-            let targetUrl = `${this.getCleanBaseUrl(baseUrl)}/api/chat`;
+            const cleanUrl = this.getCleanBaseUrl(baseUrl);
+            const targetUrl = `${cleanUrl}/api/chat`;
+
+            const mixedContentError = this.checkMixedContent(cleanUrl);
+            if (mixedContentError) throw new Error(mixedContentError);
+
             const body = JSON.stringify({ model, messages, stream: true });
             const headers = { 'Content-Type': 'application/json' };
-            const fetchOptions = {
+            
+            const response = await fetch(targetUrl, {
                 method: 'POST',
                 headers,
                 body,
-                mode: 'cors' as RequestMode,
-                credentials: 'omit' as RequestCredentials
-            };
-            
-            let response: Response;
-            
-            try {
-                response = await fetch(targetUrl, fetchOptions);
-            } catch (fetchError: any) {
-                 // Attempt fallback if using localhost (fixes IPv6 issues)
-                 if (targetUrl.includes('localhost')) {
-                     const fallbackUrl = targetUrl.replace('localhost', '127.0.0.1');
-                     try {
-                        response = await fetch(fallbackUrl, fetchOptions);
-                     } catch (retryError) {
-                        throw fetchError; // Throw original error if fallback fails
-                     }
-                 } else {
-                     throw fetchError;
-                 }
-            }
+                mode: 'cors',
+                credentials: 'omit'
+            });
             
             if (!response.body) throw new Error('No response body');
             const reader = response.body.getReader();
@@ -155,7 +147,7 @@ export class LLMService {
                 buffer += decoder.decode(value, { stream: true });
                 
                 const lines = buffer.split('\n');
-                buffer = lines.pop() || ''; // Keep incomplete line in buffer
+                buffer = lines.pop() || ''; 
 
                 for (const line of lines) {
                     if (!line.trim()) continue;
@@ -208,9 +200,7 @@ export class LLMService {
         }
 
         else if (provider === 'gemini') {
-             // Gemini REST API "streamGenerateContent"
              const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}`;
-             // Maps standard "messages" to Gemini "contents"
              const contents = messages.map(m => ({
                  role: m.role === 'assistant' ? 'model' : 'user',
                  parts: [{ text: m.content }]
@@ -242,22 +232,15 @@ export class LLMService {
         }
         
         else {
-            yield "Provider implementation not fully ready. Try Ollama.";
+            yield "Provider implementation not fully ready.";
         }
 
     } catch (error: any) {
         console.error("Streaming Error:", error);
         let msg = error.message || String(error);
-        
         if (msg.includes('Failed to fetch')) {
-             // Check for Mixed Content (HTTPS -> HTTP)
-             if (typeof window !== 'undefined' && window.location.protocol === 'https:' && baseUrl?.includes('http:')) {
-                 msg += " (Mixed Content Error: Browser blocked HTTP request from HTTPS. Use a tunnel or run app locally.)";
-             } else {
-                 msg += " (Ensure Ollama is running with OLLAMA_ORIGINS='*')";
-             }
+             msg += " (Check: Is the server running? Is CORS configured?)";
         }
-        
         yield `\n[Error: ${msg}]`;
     }
   }

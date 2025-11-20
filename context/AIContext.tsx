@@ -1,12 +1,16 @@
-import React, { createContext, useContext, ReactNode } from 'react';
+
+import React, { createContext, useContext, ReactNode, useState, useEffect } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-import { AIConfig } from '../types';
+import { AIConfig, ConnectionStatus } from '../types';
+import { LLMService } from '../services/llmService';
 
 interface AIContextType {
   config: AIConfig;
   setConfig: (config: AIConfig) => void;
   isSettingsOpen: boolean;
   setSettingsOpen: (isOpen: boolean) => void;
+  connectionStatus: ConnectionStatus;
+  checkConnection: () => Promise<void>;
 }
 
 const DEFAULT_AI_CONFIG: AIConfig = {
@@ -19,12 +23,32 @@ const DEFAULT_AI_CONFIG: AIConfig = {
 const AIContext = createContext<AIContextType | undefined>(undefined);
 
 export const AIProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  // Updated keys to 'lumen-'
   const [config, setConfig] = useLocalStorage<AIConfig>('lumen-ai-config', DEFAULT_AI_CONFIG);
   const [isSettingsOpen, setSettingsOpen] = useLocalStorage<boolean>('lumen-ai-modal-open', false);
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('checking');
+
+  const checkConnection = async () => {
+    setConnectionStatus('checking');
+    const service = new LLMService(config);
+    const result = await service.verifyConnection();
+    setConnectionStatus(result.success ? 'connected' : 'disconnected');
+  };
+
+  // Check connection whenever config changes
+  useEffect(() => {
+    checkConnection();
+    
+    // Optional: Poll for local connections (Ollama) in case it starts up later
+    let interval: any;
+    if (config.provider === 'ollama') {
+      interval = setInterval(checkConnection, 30000);
+    }
+    
+    return () => clearInterval(interval);
+  }, [config]);
 
   return (
-    <AIContext.Provider value={{ config, setConfig, isSettingsOpen, setSettingsOpen }}>
+    <AIContext.Provider value={{ config, setConfig, isSettingsOpen, setSettingsOpen, connectionStatus, checkConnection }}>
       {children}
     </AIContext.Provider>
   );
