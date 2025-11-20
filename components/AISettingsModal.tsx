@@ -1,0 +1,305 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { useAI } from '../context/AIContext';
+import { Button } from './ui/Button';
+import { Input } from './ui/Input';
+import { AIConfig, OllamaTagsResponse } from '../types';
+import { 
+  AlertCircle, 
+  CheckCircle2, 
+  Server, 
+  Key, 
+  Bot, 
+  X, 
+  RefreshCw, 
+  ChevronsUpDown,
+  Check
+} from 'lucide-react';
+import { LLMService } from '../services/llmService';
+
+// Up-to-date known models for quick selection
+const KNOWN_MODELS: Record<string, string[]> = {
+  openai: ['gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo', 'gpt-4'],
+  anthropic: ['claude-3-5-sonnet-latest', 'claude-3-opus-latest', 'claude-3-haiku-20240307'],
+  gemini: ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-pro'],
+  ollama: [] // populated dynamically
+};
+
+export const AISettingsModal: React.FC = () => {
+  const { isSettingsOpen, setSettingsOpen, config, setConfig } = useAI();
+  const [localConfig, setLocalConfig] = useState<AIConfig>(config);
+  
+  // Model Management
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [isLoadingModels, setIsLoadingModels] = useState(false);
+  const [isModelListOpen, setIsModelListOpen] = useState(false);
+  const modelListRef = useRef<HTMLDivElement>(null);
+
+  // Connection Test State
+  const [isTesting, setIsTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  // Sync local state with global state when modal opens
+  useEffect(() => {
+    if (isSettingsOpen) {
+      setLocalConfig(config);
+      setTestResult(null);
+    }
+  }, [isSettingsOpen, config]);
+
+  // Close model list when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (modelListRef.current && !modelListRef.current.contains(event.target as Node)) {
+        setIsModelListOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Update available models based on provider
+  useEffect(() => {
+    if (localConfig.provider === 'ollama') {
+      fetchOllamaModels();
+    } else {
+      // For cloud providers, use the static known list
+      setAvailableModels(KNOWN_MODELS[localConfig.provider] || []);
+    }
+  }, [localConfig.provider]);
+
+  // Reset test result when critical config changes
+  useEffect(() => {
+    setTestResult(null);
+  }, [localConfig.provider, localConfig.baseUrl, localConfig.apiKey]);
+
+  const fetchOllamaModels = async () => {
+    if (!localConfig.baseUrl) return;
+    
+    setIsLoadingModels(true);
+    try {
+      const response = await fetch(`${localConfig.baseUrl}/api/tags`);
+      if (!response.ok) throw new Error('Failed to fetch');
+      
+      const data: OllamaTagsResponse = await response.json();
+      setAvailableModels(data.models.map(m => m.name));
+    } catch (error) {
+      // If fetch fails, fallback to some defaults but allow manual entry
+      console.warn("Failed to fetch Ollama models, likely CORS or offline.");
+      setAvailableModels(['llama3', 'mistral', 'gemma', 'qwen']);
+    } finally {
+      setIsLoadingModels(false);
+    }
+  };
+
+  const handleTestConnection = async () => {
+    setIsTesting(true);
+    setTestResult(null);
+    
+    const service = new LLMService(localConfig);
+    const result = await service.verifyConnection();
+    
+    setTestResult(result);
+    setIsTesting(false);
+  };
+
+  const handleSave = () => {
+    setConfig(localConfig);
+    setSettingsOpen(false);
+  };
+
+  // CRITICAL FIX: Do not render if settings are closed
+  if (!isSettingsOpen) return null;
+
+  // Helper to determine if we should show API Key field
+  const needsApiKey = localConfig.provider !== 'ollama';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+      <div 
+        className="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity"
+        onClick={() => setSettingsOpen(false)}
+      />
+
+      <div className="relative w-full max-w-lg bg-[#111111] border border-[#333] rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#222] bg-[#161616]">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-emerald-500/10 rounded-lg">
+                <Bot className="w-5 h-5 text-emerald-400" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-white">AI Configuration</h2>
+              <p className="text-xs text-gray-400">Configure your intelligence provider</p>
+            </div>
+          </div>
+          <button onClick={() => setSettingsOpen(false)} className="text-gray-500 hover:text-white">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          
+          {/* Provider Selection */}
+          <div className="space-y-3">
+            <label className="text-sm font-medium text-gray-300">Select Provider</label>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {[
+                { id: 'ollama', label: 'Ollama', icon: Server },
+                { id: 'openai', label: 'OpenAI', icon: Key },
+                { id: 'anthropic', label: 'Anthropic', icon: Key },
+                { id: 'gemini', label: 'Gemini', icon: Key },
+              ].map((provider) => (
+                <button
+                  key={provider.id}
+                  onClick={() => setLocalConfig({ ...localConfig, provider: provider.id as any, modelName: '' })}
+                  className={`flex flex-col items-center justify-center gap-2 p-3 rounded-lg border transition-all ${
+                    localConfig.provider === provider.id
+                      ? 'bg-emerald-900/20 border-emerald-600 text-emerald-400'
+                      : 'bg-[#1C1C1C] border-[#333] text-gray-400 hover:bg-[#252525] hover:border-gray-600'
+                  }`}
+                >
+                  <provider.icon className="w-5 h-5" />
+                  <span className="text-xs font-medium">{provider.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Configuration Fields */}
+          <div className="p-5 rounded-xl border border-[#2A2A2A] bg-[#181818] space-y-5">
+            
+            {/* Base URL (Ollama only) */}
+            {localConfig.provider === 'ollama' && (
+                 <div className="space-y-2">
+                    <div className="flex justify-between">
+                        <label className="text-sm font-medium text-gray-300">Ollama Base URL</label>
+                        <button 
+                            onClick={fetchOllamaModels}
+                            className="text-xs text-emerald-500 hover:text-emerald-400 flex items-center gap-1"
+                            disabled={isLoadingModels}
+                        >
+                            <RefreshCw className={`w-3 h-3 ${isLoadingModels ? 'animate-spin' : ''}`} />
+                            Refresh Models
+                        </button>
+                    </div>
+                    <Input
+                        value={localConfig.baseUrl}
+                        onChange={(e) => setLocalConfig({ ...localConfig, baseUrl: e.target.value })}
+                        placeholder="http://localhost:11434"
+                    />
+                    <p className="text-[11px] text-gray-500">
+                        Default: <code className="bg-[#222] px-1 rounded text-gray-300">http://localhost:11434</code>
+                    </p>
+                </div>
+            )}
+
+            {/* API Key (Cloud Only) */}
+            {needsApiKey && (
+                <div className="space-y-2">
+                    <Input
+                        label={`${localConfig.provider.charAt(0).toUpperCase() + localConfig.provider.slice(1)} API Key`}
+                        type="password"
+                        value={localConfig.apiKey}
+                        onChange={(e) => setLocalConfig({ ...localConfig, apiKey: e.target.value })}
+                        placeholder="sk-..."
+                    />
+                    <p className="text-[11px] text-gray-500 flex gap-1">
+                        <Key className="w-3 h-3 mt-0.5" />
+                        Stored locally. Never sent to our servers.
+                    </p>
+                </div>
+            )}
+
+            {/* Model Selection (Combobox) */}
+            <div className="space-y-2" ref={modelListRef}>
+                <label className="text-sm font-medium text-gray-300">Model Name</label>
+                <div className="relative">
+                    <div className="relative">
+                        <Input
+                            value={localConfig.modelName}
+                            onChange={(e) => {
+                                setLocalConfig({ ...localConfig, modelName: e.target.value });
+                                setIsModelListOpen(true);
+                            }}
+                            onFocus={() => setIsModelListOpen(true)}
+                            placeholder={localConfig.provider === 'ollama' ? "llama3" : "gpt-4o"}
+                            className="pr-10"
+                        />
+                        <div 
+                            className="absolute right-2 top-2.5 text-gray-500 cursor-pointer hover:text-gray-300"
+                            onClick={() => setIsModelListOpen(!isModelListOpen)}
+                        >
+                            <ChevronsUpDown className="w-4 h-4" />
+                        </div>
+                    </div>
+
+                    {/* Dropdown List */}
+                    {isModelListOpen && availableModels.length > 0 && (
+                        <div className="absolute z-10 w-full mt-1 bg-[#222] border border-[#333] rounded-lg shadow-xl max-h-48 overflow-y-auto">
+                            {availableModels
+                                .filter(m => m.toLowerCase().includes((localConfig.modelName || '').toLowerCase()))
+                                .map((model) => (
+                                <button
+                                    key={model}
+                                    className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-[#333] hover:text-white flex items-center justify-between"
+                                    onClick={() => {
+                                        setLocalConfig({ ...localConfig, modelName: model });
+                                        setIsModelListOpen(false);
+                                    }}
+                                >
+                                    <span>{model}</span>
+                                    {localConfig.modelName === model && <Check className="w-3 h-3 text-emerald-500" />}
+                                </button>
+                            ))}
+                            {availableModels.length === 0 && (
+                                <div className="px-3 py-2 text-xs text-gray-500">No suggestions found</div>
+                            )}
+                        </div>
+                    )}
+                </div>
+                <p className="text-[11px] text-gray-500">
+                    Select a preset or type a custom model name (BYOK).
+                </p>
+            </div>
+
+            {/* Connection Feedback */}
+            <div className="pt-4 border-t border-[#2A2A2A] flex items-center justify-between">
+                <div className="flex-1 mr-4">
+                    {testResult && (
+                        <div className={`text-xs flex items-start gap-2 ${testResult.success ? 'text-green-400' : 'text-red-400'}`}>
+                            {testResult.success ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+                            <span>{testResult.message}</span>
+                        </div>
+                    )}
+                    {!testResult && (
+                        <span className="text-xs text-gray-500">Status: Untested</span>
+                    )}
+                </div>
+                <Button 
+                    variant="secondary" 
+                    size="sm" 
+                    onClick={handleTestConnection}
+                    disabled={isTesting}
+                    className="shrink-0"
+                >
+                    {isTesting ? 'Testing...' : 'Test Connection'}
+                </Button>
+            </div>
+
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-[#222] bg-[#161616]">
+            <Button variant="ghost" onClick={() => setSettingsOpen(false)}>
+                Cancel
+            </Button>
+            <Button onClick={handleSave} className="bg-emerald-600 hover:bg-emerald-500">
+                Save Configuration
+            </Button>
+        </div>
+      </div>
+    </div>
+  );
+};
