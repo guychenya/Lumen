@@ -13,21 +13,22 @@ import {
   X, 
   RefreshCw, 
   ChevronsUpDown,
-  Check
+  Check,
+  ShieldAlert
 } from 'lucide-react';
 import { LLMService } from '../services/llmService';
 
-// Up-to-date known models for quick selection
 const KNOWN_MODELS: Record<string, string[]> = {
   openai: ['gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo', 'gpt-4'],
   anthropic: ['claude-3-5-sonnet-latest', 'claude-3-opus-latest', 'claude-3-haiku-20240307'],
   gemini: ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-pro'],
-  ollama: [] // populated dynamically
+  ollama: [] 
 };
 
 export const AISettingsModal: React.FC = () => {
   const { isSettingsOpen, setSettingsOpen, config, setConfig } = useAI();
   const [localConfig, setLocalConfig] = useState<AIConfig>(config);
+  const [isMixedContent, setIsMixedContent] = useState(false);
   
   // Model Management
   const [availableModels, setAvailableModels] = useState<string[]>([]);
@@ -39,7 +40,6 @@ export const AISettingsModal: React.FC = () => {
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
-  // Sync local state with global state when modal opens
   useEffect(() => {
     if (isSettingsOpen) {
       setLocalConfig(config);
@@ -47,7 +47,6 @@ export const AISettingsModal: React.FC = () => {
     }
   }, [isSettingsOpen, config]);
 
-  // Close model list when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (modelListRef.current && !modelListRef.current.contains(event.target as Node)) {
@@ -58,35 +57,35 @@ export const AISettingsModal: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Update available models based on provider
   useEffect(() => {
     if (localConfig.provider === 'ollama') {
       fetchOllamaModels();
+      // Check Mixed Content: Running on HTTPS but trying to access HTTP
+      if (typeof window !== 'undefined' && window.location.protocol === 'https:' && localConfig.baseUrl?.includes('http:')) {
+          setIsMixedContent(true);
+      } else {
+          setIsMixedContent(false);
+      }
     } else {
-      // For cloud providers, use the static known list
       setAvailableModels(KNOWN_MODELS[localConfig.provider] || []);
+      setIsMixedContent(false);
     }
-  }, [localConfig.provider]);
+  }, [localConfig.provider, localConfig.baseUrl]);
 
-  // Reset test result when critical config changes
   useEffect(() => {
     setTestResult(null);
   }, [localConfig.provider, localConfig.baseUrl, localConfig.apiKey]);
 
   const fetchOllamaModels = async () => {
     if (!localConfig.baseUrl) return;
-    
     setIsLoadingModels(true);
     try {
-      // Simple fetch to list models
       const response = await fetch(`${localConfig.baseUrl.replace(/\/$/, '')}/api/tags`);
       if (!response.ok) throw new Error('Failed to fetch');
-      
       const data: OllamaTagsResponse = await response.json();
       setAvailableModels(data.models.map(m => m.name));
     } catch (error) {
       console.warn("Failed to fetch Ollama models:", error);
-      // Fallback defaults
       setAvailableModels(['llama3', 'mistral', 'gemma', 'qwen']);
     } finally {
       setIsLoadingModels(false);
@@ -96,10 +95,8 @@ export const AISettingsModal: React.FC = () => {
   const handleTestConnection = async () => {
     setIsTesting(true);
     setTestResult(null);
-    
     const service = new LLMService(localConfig);
     const result = await service.verifyConnection();
-    
     setTestResult(result);
     setIsTesting(false);
   };
@@ -121,7 +118,6 @@ export const AISettingsModal: React.FC = () => {
       />
 
       <div className="relative w-full max-w-lg bg-[#111111] border border-[#333] rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#222] bg-[#161616]">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-emerald-500/10 rounded-lg">
@@ -137,10 +133,7 @@ export const AISettingsModal: React.FC = () => {
           </button>
         </div>
 
-        {/* Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          
-          {/* Provider Selection */}
           <div className="space-y-3">
             <label className="text-sm font-medium text-gray-300">Select Provider</label>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -166,10 +159,8 @@ export const AISettingsModal: React.FC = () => {
             </div>
           </div>
 
-          {/* Configuration Fields */}
           <div className="p-5 rounded-xl border border-[#2A2A2A] bg-[#181818] space-y-5">
             
-            {/* Base URL (Ollama only) */}
             {localConfig.provider === 'ollama' && (
                  <div className="space-y-2">
                     <div className="flex justify-between">
@@ -188,13 +179,18 @@ export const AISettingsModal: React.FC = () => {
                         onChange={(e) => setLocalConfig({ ...localConfig, baseUrl: e.target.value })}
                         placeholder="http://localhost:11434"
                     />
-                    <p className="text-[11px] text-gray-500">
-                        Default: <code className="bg-[#222] px-1 rounded text-gray-300">http://localhost:11434</code>
-                    </p>
+                    {isMixedContent && (
+                        <div className="flex gap-2 p-2 rounded bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs">
+                            <ShieldAlert className="w-4 h-4 shrink-0" />
+                            <span>
+                                <strong>Browser Security Warning:</strong> You are on HTTPS but Ollama is HTTP. 
+                                Browsers block this. Please use a tunneling service (like ngrok) or run this app locally via HTTP.
+                            </span>
+                        </div>
+                    )}
                 </div>
             )}
 
-            {/* API Key (Cloud Only) */}
             {needsApiKey && (
                 <div className="space-y-2">
                     <Input
@@ -204,14 +200,9 @@ export const AISettingsModal: React.FC = () => {
                         onChange={(e) => setLocalConfig({ ...localConfig, apiKey: e.target.value })}
                         placeholder="sk-..."
                     />
-                    <p className="text-[11px] text-gray-500 flex gap-1">
-                        <Key className="w-3 h-3 mt-0.5" />
-                        Stored locally. Never sent to our servers.
-                    </p>
                 </div>
             )}
 
-            {/* Model Selection (Combobox) */}
             <div className="space-y-2" ref={modelListRef}>
                 <label className="text-sm font-medium text-gray-300">Model Name</label>
                 <div className="relative">
@@ -234,7 +225,6 @@ export const AISettingsModal: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* Dropdown List */}
                     {isModelListOpen && availableModels.length > 0 && (
                         <div className="absolute z-10 w-full mt-1 bg-[#222] border border-[#333] rounded-lg shadow-xl max-h-48 overflow-y-auto">
                             {availableModels
@@ -252,18 +242,11 @@ export const AISettingsModal: React.FC = () => {
                                     {localConfig.modelName === model && <Check className="w-3 h-3 text-emerald-500" />}
                                 </button>
                             ))}
-                            {availableModels.length === 0 && (
-                                <div className="px-3 py-2 text-xs text-gray-500">No suggestions found</div>
-                            )}
                         </div>
                     )}
                 </div>
-                <p className="text-[11px] text-gray-500">
-                    Select a preset or type a custom model name (BYOK).
-                </p>
             </div>
 
-            {/* Connection Feedback */}
             <div className="pt-4 border-t border-[#2A2A2A]">
                 <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-medium text-gray-400">Connection Status</span>
@@ -289,7 +272,6 @@ export const AISettingsModal: React.FC = () => {
           </div>
         </div>
 
-        {/* Footer */}
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-[#222] bg-[#161616]">
             <Button variant="ghost" onClick={() => setSettingsOpen(false)}>
                 Cancel

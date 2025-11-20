@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { AIProvider, useAI } from './context/AIContext';
 import { AISettingsModal } from './components/AISettingsModal';
@@ -37,7 +38,7 @@ const EditorWorkspace = () => {
     setGeneratedText(""); // Clear previous
 
     const service = new LLMService(config);
-    const fullPrompt = `${promptPrefix}:\n\n${content}`;
+    const fullPrompt = `${promptPrefix} for the following text. output only the result, no preamble:\n\n${content}`;
     const messages: ChatMessage[] = [{ role: 'user', content: fullPrompt }];
 
     try {
@@ -50,6 +51,15 @@ const EditorWorkspace = () => {
     } finally {
         setIsGenerating(false);
     }
+  };
+
+  const handleInsert = () => {
+      setContent(prev => prev + "\n\n" + generatedText);
+      setGeneratedText("");
+  };
+
+  const handleDiscard = () => {
+      setGeneratedText("");
   };
 
   return (
@@ -164,8 +174,8 @@ const EditorWorkspace = () => {
                         {isGenerating && <span className="inline-block w-2 h-4 bg-emerald-500 ml-1 animate-pulse"/>}
                      </div>
                      <div className="flex gap-2 mt-3 justify-end">
-                        <Button size="sm" variant="ghost">Discard</Button>
-                        <Button size="sm" className="bg-emerald-600 hover:bg-emerald-500 text-white">Insert into Note</Button>
+                        <Button size="sm" variant="ghost" onClick={handleDiscard} disabled={isGenerating}>Discard</Button>
+                        <Button size="sm" className="bg-emerald-600 hover:bg-emerald-500 text-white" onClick={handleInsert} disabled={isGenerating}>Insert into Note</Button>
                      </div>
                   </div>
               )}
