@@ -80,10 +80,17 @@ export const AISettingsModal: React.FC = () => {
     if (!localConfig.baseUrl) return;
     setIsLoadingModels(true);
     try {
-      const response = await fetch(`${localConfig.baseUrl.replace(/\/$/, '')}/api/tags`);
-      if (!response.ok) throw new Error('Failed to fetch');
-      const data: OllamaTagsResponse = await response.json();
-      setAvailableModels(data.models.map(m => m.name));
+      const service = new LLMService(localConfig);
+      // We use verifyConnection because it has all the fallback logic
+      const result = await service.verifyConnection();
+      if (result.success) {
+          // If verified, we try to fetch tags properly
+          const res = await fetch(`${localConfig.baseUrl.replace(/\/$/, '')}/api/tags`);
+          const data: OllamaTagsResponse = await res.json();
+          setAvailableModels(data.models.map(m => m.name));
+      } else {
+          setAvailableModels(['llama3', 'mistral', 'gemma', 'qwen']);
+      }
     } catch (error) {
       console.warn("Failed to fetch Ollama models:", error);
       setAvailableModels(['llama3', 'mistral', 'gemma', 'qwen']);
@@ -180,12 +187,16 @@ export const AISettingsModal: React.FC = () => {
                         placeholder="http://localhost:11434"
                     />
                     {isMixedContent && (
-                        <div className="flex gap-2 p-2 rounded bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs">
-                            <ShieldAlert className="w-4 h-4 shrink-0" />
-                            <span>
-                                <strong>Browser Security Warning:</strong> You are on HTTPS but Ollama is HTTP. 
-                                Browsers block this. Please use a tunneling service (like ngrok) or run this app locally via HTTP.
-                            </span>
+                        <div className="flex gap-2 p-3 rounded bg-red-500/20 border border-red-500/50 text-red-200 text-xs items-start">
+                            <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+                            <div>
+                                <strong>Connection Blocked:</strong> You are using this app via HTTPS but trying to connect to a local HTTP server.
+                                <ul className="list-disc pl-4 mt-1 text-red-300/80 space-y-0.5">
+                                    <li>Browsers block this for security (Mixed Content).</li>
+                                    <li><strong>Solution 1:</strong> Run this web app on http://localhost:port</li>
+                                    <li><strong>Solution 2:</strong> Use a tunnel (ngrok) for Ollama.</li>
+                                </ul>
+                            </div>
                         </div>
                     )}
                 </div>

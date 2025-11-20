@@ -39,7 +39,7 @@ export class LLMService {
              if (typeof window !== 'undefined' && window.location.protocol === 'https:' && baseUrl.includes('http:')) {
                  msg += " (Mixed Content: Browser blocked HTTP request. Use a tunnel or run locally.)";
              } else {
-                 msg += " (Ensure Ollama is running with OLLAMA_ORIGINS='*')";
+                 msg += " (Check: Is Ollama running? Did you set OLLAMA_ORIGINS='*'?)";
              }
         }
         return { success: false, message: `Connection Failed: ${msg}` };
@@ -90,7 +90,17 @@ export class LLMService {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3000);
     try {
-        return await fetch(`${baseUrl}/api/tags`, { signal: controller.signal });
+        // STRICT CONFIGURATION FOR LOCALHOST FETCHING
+        return await fetch(`${baseUrl}/api/tags`, { 
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            mode: 'cors',
+            credentials: 'omit', // Crucial: prevents browser from sending cookies which can trigger strict CORS
+            signal: controller.signal 
+        });
     } finally {
         clearTimeout(timeoutId);
     }
@@ -108,17 +118,24 @@ export class LLMService {
             let targetUrl = `${this.getCleanBaseUrl(baseUrl)}/api/chat`;
             const body = JSON.stringify({ model, messages, stream: true });
             const headers = { 'Content-Type': 'application/json' };
+            const fetchOptions = {
+                method: 'POST',
+                headers,
+                body,
+                mode: 'cors' as RequestMode,
+                credentials: 'omit' as RequestCredentials
+            };
             
             let response: Response;
             
             try {
-                response = await fetch(targetUrl, { method: 'POST', headers, body });
+                response = await fetch(targetUrl, fetchOptions);
             } catch (fetchError: any) {
                  // Attempt fallback if using localhost (fixes IPv6 issues)
                  if (targetUrl.includes('localhost')) {
-                     targetUrl = targetUrl.replace('localhost', '127.0.0.1');
+                     const fallbackUrl = targetUrl.replace('localhost', '127.0.0.1');
                      try {
-                        response = await fetch(targetUrl, { method: 'POST', headers, body });
+                        response = await fetch(fallbackUrl, fetchOptions);
                      } catch (retryError) {
                         throw fetchError; // Throw original error if fallback fails
                      }
