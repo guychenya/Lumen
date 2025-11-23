@@ -46,8 +46,10 @@ const EditorWorkspace = () => {
        if (selection && selection.rangeCount > 0) {
            const range = selection.getRangeAt(0);
            const rect = range.getBoundingClientRect();
+           
+           // Calculate absolute position including scroll
            setSlashMenuPos({
-               top: rect.top + window.scrollY,
+               top: rect.top + window.scrollY + 24, // Place below cursor
                left: rect.left + window.scrollX
            });
            setSlashMenuOpen(true);
@@ -214,7 +216,7 @@ const EditorWorkspace = () => {
       <div className="flex-1 flex flex-col min-w-0 relative">
         
         {/* Header - HIDDEN ON PRINT */}
-        <header className="h-14 border-b border-[#222] bg-[#111111] flex items-center justify-between px-6 z-20 print:hidden">
+        <header className="h-14 border-b border-[#222] bg-[#111111] flex items-center justify-between px-6 z-20 print:hidden sticky top-0">
            <div className="flex items-center gap-2 text-sm text-gray-400 w-full mr-4">
               <span className="hidden sm:inline shrink-0">My Workspace</span>
               <ChevronRight className="w-4 h-4 hidden sm:inline shrink-0" />
@@ -296,7 +298,7 @@ const EditorWorkspace = () => {
         </header>
 
         {/* Toolbar - HIDDEN ON PRINT */}
-        <div className="h-12 border-b border-[#222] bg-[#161616] flex items-center px-6 gap-2 overflow-x-auto no-scrollbar z-20 sticky top-0 print:hidden">
+        <div className="h-12 border-b border-[#222] bg-[#161616] flex items-center px-6 gap-2 overflow-x-auto no-scrollbar z-20 sticky top-14 print:hidden">
             <div className="flex items-center gap-1 pr-4 border-r border-[#333]">
                 <button onClick={() => execFormat('bold')} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded" title="Bold"><Bold className="w-4 h-4" /></button>
                 <button onClick={() => execFormat('italic')} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded" title="Italic"><Italic className="w-4 h-4" /></button>
@@ -324,8 +326,8 @@ const EditorWorkspace = () => {
             </Button>
         </div>
 
-        {/* Editor Canvas */}
-        <div className="flex-1 bg-[#0F0F0F] relative cursor-text print:bg-white" onClick={() => editorRef.current?.focus()}>
+        {/* Editor Canvas with Dotted Background */}
+        <div className="flex-1 bg-dotted-pattern relative cursor-text print:bg-white" onClick={() => editorRef.current?.focus()}>
            {activeNote ? (
                <div className="max-w-4xl mx-auto py-12 px-8 min-h-[calc(100vh-7rem)] print:p-0 print:min-h-0">
                   <input 

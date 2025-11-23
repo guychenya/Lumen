@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState } from 'react';
 import { 
   Heading1, Heading2, Heading3, List, ListOrdered, CheckSquare, 
@@ -96,7 +95,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     label: 'Code Block',
     icon: Code,
     description: 'Capture a code snippet',
-    action: () => insertHtml('<pre class="bg-gray-900 p-4 rounded border border-gray-700 font-mono text-sm text-gray-300 my-4"><code>// Code here</code></pre><p><br/></p>')
+    action: () => insertHtml('<pre class="bg-gray-900 p-4 rounded border border-gray-700 font-mono text-sm text-gray-300 my-4 shadow-inner"><code>// Code here</code></pre><p><br/></p>')
   },
   {
     id: 'divider',
@@ -151,8 +150,8 @@ export const SlashCommandMenu: React.FC<Props> = ({ isOpen, position, onSelect, 
 
   return (
     <div 
-      className="fixed z-50 w-72 bg-[#1C1C1C] border border-[#333] rounded-lg shadow-2xl overflow-hidden flex flex-col max-h-[300px] animate-in fade-in zoom-in-95 duration-100"
-      style={{ top: position.top + 24, left: position.left }}
+      className="absolute z-50 w-72 bg-[#1C1C1C] border border-[#333] rounded-lg shadow-2xl overflow-hidden flex flex-col max-h-[300px] animate-in fade-in zoom-in-95 duration-100"
+      style={{ top: position.top, left: position.left }}
     >
       <div className="px-3 py-2 border-b border-[#2A2A2A] bg-[#161616] text-xs font-semibold text-gray-500 uppercase tracking-wider">
         Insert Block
