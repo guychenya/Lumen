@@ -1,5 +1,7 @@
 {
   "name": "Lumen Notes AI",
   "description": "A privacy-first, local-first note taking application with AI capabilities.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "microphone"
+  ]
 }

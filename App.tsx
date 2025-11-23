@@ -8,11 +8,12 @@ import { htmlToMarkdown, htmlToText } from './services/converter';
 import { FloatingToolbar } from './components/FloatingToolbar';
 import { SlashCommandMenu, SlashCommand } from './components/SlashCommandMenu';
 import { RichEditor } from './components/RichEditor';
+import { VoiceModeModal } from './components/VoiceModeModal';
 import { ChatMessage } from './types';
 import { 
   Settings, Sparkles, Plus, FileText, ChevronRight, MoreHorizontal, Zap,
   Bold, Italic, List, PenLine, Trash2, Edit2, Image as ImageIcon, 
-  Table as TableIcon, Download, Upload, File, FileCode, Printer, ChevronDown
+  Table as TableIcon, Download, Upload, File, FileCode, Printer, ChevronDown, Mic
 } from 'lucide-react';
 
 const EditorWorkspace = () => {
@@ -23,6 +24,7 @@ const EditorWorkspace = () => {
   const [generatedText, setGeneratedText] = useState("");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const [isVoiceModeOpen, setIsVoiceModeOpen] = useState(false);
 
   // Slash Command State
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
@@ -94,6 +96,12 @@ const EditorWorkspace = () => {
       const html = generatedText.replace(/\n/g, '<br/>');
       document.execCommand('insertHTML', false, html);
       setGeneratedText("");
+  };
+
+  const handleVoiceInsert = (htmlContent: string) => {
+      if (!activeNote || !editorRef.current) return;
+      editorRef.current.focus();
+      document.execCommand('insertHTML', false, htmlContent);
   };
 
   const handleDiscard = () => {
@@ -297,7 +305,7 @@ const EditorWorkspace = () => {
                 <button onClick={() => execFormat('formatBlock', 'H2')} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded font-serif font-bold text-xs" title="Heading">H2</button>
             </div>
             
-            <div className="flex items-center gap-2 pl-2 whitespace-nowrap">
+            <div className="flex items-center gap-2 pl-2 whitespace-nowrap flex-1">
                 <span className="text-xs font-medium text-emerald-500 uppercase tracking-wider ml-2 mr-1">AI Tools</span>
                 <Button size="sm" variant="secondary" onClick={() => handleAIAction("Summarize this note")}>
                     <Sparkles className="w-3 h-3 mr-2 text-emerald-400" /> Summarize
@@ -306,6 +314,14 @@ const EditorWorkspace = () => {
                     <PenLine className="w-3 h-3 mr-2 text-blue-400" /> Improve
                 </Button>
             </div>
+
+            <Button 
+                onClick={() => setIsVoiceModeOpen(true)} 
+                className="bg-emerald-600/20 text-emerald-400 border border-emerald-600/50 hover:bg-emerald-600/30"
+                size="sm"
+            >
+                <Mic className="w-4 h-4 mr-2" /> Voice Mode
+            </Button>
         </div>
 
         {/* Editor Canvas */}
@@ -376,6 +392,11 @@ const EditorWorkspace = () => {
 
       <div className="print:hidden">
         <AISettingsModal />
+        <VoiceModeModal 
+            isOpen={isVoiceModeOpen} 
+            onClose={() => setIsVoiceModeOpen(false)} 
+            onInsert={handleVoiceInsert}
+        />
         <SlashCommandMenu 
             isOpen={slashMenuOpen} 
             position={slashMenuPos} 
