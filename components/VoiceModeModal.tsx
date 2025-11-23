@@ -56,6 +56,8 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
   };
 
   const initSpeech = () => {
+    if (typeof window === 'undefined') return null;
+
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
       setStage('error');
       setErrorMsg("Speech recognition is not supported in this browser. Please try Google Chrome.");
@@ -191,7 +193,7 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-300">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-300">
       <div className="w-full max-w-2xl bg-[#111] border border-[#333] rounded-2xl shadow-2xl overflow-hidden flex flex-col relative">
         
         {/* Header */}
