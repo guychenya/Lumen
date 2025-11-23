@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, Square, Sparkles, X, Wand2, AlertCircle } from 'lucide-react';
+import { Mic, Square, Sparkles, X, Wand2, AlertCircle, RefreshCw } from 'lucide-react';
 import { AudioVisualizer } from './AudioVisualizer';
 import { Button } from './ui/Button';
 import { useAI } from '../context/AIContext';
@@ -55,7 +55,7 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
   const initSpeech = () => {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
       setStage('error');
-      setErrorMsg("Speech recognition is not supported in this browser.");
+      setErrorMsg("Speech recognition is not supported in this browser. Please try Google Chrome.");
       return null;
     }
     // @ts-ignore
@@ -99,7 +99,7 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
         setStage('error');
 
         if (event.error === 'network') {
-             setErrorMsg("Network Error: Browser speech recognition requires an active internet connection.");
+             setErrorMsg("Network Error: Connection failed. This usually happens in browsers other than Chrome. Please try Chrome or check your internet.");
         } else if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
              setErrorMsg("Microphone access denied. Please allow permissions in your browser.");
         } else if (event.error === 'aborted') {
@@ -130,6 +130,16 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
         return;
     }
     processWithAI();
+  };
+
+  const handleRetry = () => {
+    stopEverything();
+    setErrorMsg('');
+    setStage('idle');
+    // Small delay to allow cleanup to complete
+    setTimeout(() => {
+        startRecording();
+    }, 100);
   };
 
   const processWithAI = async () => {
@@ -227,7 +237,11 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
              </div>
 
              <div className="flex gap-3">
-                 {stage === 'recording' ? (
+                 {stage === 'error' ? (
+                     <Button onClick={handleRetry} className="bg-emerald-600 hover:bg-emerald-500 px-6">
+                         <RefreshCw className="w-4 h-4 mr-2" /> Retry
+                     </Button>
+                 ) : stage === 'recording' ? (
                      <Button onClick={handleFinish} className="bg-red-600 hover:bg-red-500 px-8 py-3 h-auto text-base shadow-lg shadow-red-900/20">
                          <Square className="w-4 h-4 mr-2" /> Stop & Summarize
                      </Button>
