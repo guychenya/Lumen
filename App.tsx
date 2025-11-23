@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { AIProvider, useAI } from './context/AIContext';
 import { NotesProvider, useNotes } from './context/NotesContext';
@@ -14,7 +15,7 @@ import {
   Bold, Italic, List, PenLine, Trash2, Edit2, Image as ImageIcon, 
   Table as TableIcon, Download, Upload, File, FileCode, Printer, ChevronDown, Mic,
   Heading1, Heading2, Heading3, ListOrdered, CheckSquare, Quote, Code, Minus, Video, Type,
-  Eye, EyeOff
+  Eye, EyeOff, Columns, GripVertical
 } from 'lucide-react';
 
 // Helper to calculate caret coordinates in a textarea
@@ -58,6 +59,8 @@ const getCaretCoordinates = (element: HTMLTextAreaElement, position: number) => 
   };
 };
 
+type ViewMode = 'edit' | 'split' | 'preview';
+
 const EditorWorkspace = () => {
   const { setSettingsOpen, config, connectionStatus } = useAI();
   const { notes, activeNote, activeNoteId, setActiveNoteId, addNote, updateNote, deleteNote } = useNotes();
@@ -67,7 +70,11 @@ const EditorWorkspace = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [isVoiceModeOpen, setIsVoiceModeOpen] = useState(false);
-  const [isPreviewVisible, setIsPreviewVisible] = useState(true);
+  
+  // View Mode & Resizing State
+  const [viewMode, setViewMode] = useState<ViewMode>('split');
+  const [splitPos, setSplitPos] = useState(50); // Percentage
+  const [isDragging, setIsDragging] = useState(false);
 
   // Slash Command State
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
@@ -76,10 +83,10 @@ const EditorWorkspace = () => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const headerTitleRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // --- HTML/MD State Sync ---
   // We treat activeNote.content as the Source of Truth.
-  // If legacy notes are HTML, we convert to MD on load.
   const [localContent, setLocalContent] = useState("");
 
   useEffect(() => {
@@ -101,6 +108,33 @@ const EditorWorkspace = () => {
       if (activeNote) {
           updateNote(activeNote.id, { content: val });
       }
+  };
+
+  // --- Resizing Logic ---
+  const startResizing = () => {
+    setIsDragging(true);
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const handleMouseMove = (e: MouseEvent) => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const w = rect.width;
+    let percent = (x / w) * 100;
+    
+    // Clamp between 20% and 80%
+    if (percent < 20) percent = 20;
+    if (percent > 80) percent = 80;
+    
+    setSplitPos(percent);
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+    document.removeEventListener('mousemove', handleMouseMove);
+    document.removeEventListener('mouseup', handleMouseUp);
   };
 
   // Helper to insert text at cursor
@@ -281,7 +315,6 @@ const EditorWorkspace = () => {
   const handleKeyUp = (e: React.KeyboardEvent) => {
       // Close menu if user backspaces the slash
       if (slashMenuOpen && e.key === 'Backspace') {
-          // Check if slash still exists? Simpler to just close if it gets weird
           setSlashMenuOpen(false); 
       }
   };
@@ -290,7 +323,6 @@ const EditorWorkspace = () => {
     if (!textareaRef.current) return;
     
     // We need to remove the '/' that triggered the menu
-    // We assume the slash is right before the cursor
     const end = textareaRef.current.selectionEnd;
     const start = textareaRef.current.selectionStart;
     const val = textareaRef.current.value;
@@ -442,15 +474,31 @@ const EditorWorkspace = () => {
            </div>
 
            <div className="flex items-center gap-3 shrink-0">
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={() => setIsPreviewVisible(!isPreviewVisible)}
-                className={isPreviewVisible ? "text-emerald-400" : "text-gray-400"}
-                title="Toggle Preview"
-              >
-                 {isPreviewVisible ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-              </Button>
+              
+              {/* View Mode Toggle */}
+              <div className="flex bg-[#1A1A1A] rounded-lg p-1 border border-[#333]">
+                <button 
+                    onClick={() => setViewMode('edit')} 
+                    title="Editor Only"
+                    className={`p-1.5 rounded transition-all ${viewMode === 'edit' ? 'bg-[#333] text-emerald-400 shadow-sm' : 'text-gray-400 hover:text-gray-200'}`}
+                >
+                    <FileText className="w-4 h-4" />
+                </button>
+                <button 
+                    onClick={() => setViewMode('split')} 
+                    title="Split View"
+                    className={`p-1.5 rounded transition-all ${viewMode === 'split' ? 'bg-[#333] text-emerald-400 shadow-sm' : 'text-gray-400 hover:text-gray-200'}`}
+                >
+                    <Columns className="w-4 h-4" />
+                </button>
+                <button 
+                    onClick={() => setViewMode('preview')} 
+                    title="Preview Only"
+                    className={`p-1.5 rounded transition-all ${viewMode === 'preview' ? 'bg-[#333] text-emerald-400 shadow-sm' : 'text-gray-400 hover:text-gray-200'}`}
+                >
+                    <Eye className="w-4 h-4" />
+                </button>
+              </div>
 
               <div className="h-4 w-px bg-[#333] mx-1" />
 
@@ -547,11 +595,17 @@ const EditorWorkspace = () => {
         </div>
 
         {/* Split Editor Area */}
-        <div className="flex-1 flex overflow-hidden relative">
+        <div ref={containerRef} className="flex-1 flex overflow-hidden relative">
            {activeNote ? (
              <>
                {/* Left: Markdown Input */}
-               <div className={`h-full flex flex-col border-r border-[#222] bg-[#111] transition-all duration-300 ${isPreviewVisible ? 'w-1/2' : 'w-full'}`}>
+               <div 
+                   style={{ 
+                       width: viewMode === 'split' ? `${splitPos}%` : viewMode === 'edit' ? '100%' : '0%',
+                       display: viewMode === 'preview' ? 'none' : 'flex'
+                   }}
+                   className="flex flex-col border-r border-[#222] bg-[#111] transition-none"
+               >
                  <textarea 
                     ref={textareaRef}
                     className="flex-1 w-full bg-transparent text-gray-300 font-mono text-sm p-6 resize-none focus:outline-none custom-scrollbar leading-relaxed"
@@ -564,20 +618,35 @@ const EditorWorkspace = () => {
                  />
                </div>
 
-               {/* Right: Preview */}
-               {isPreviewVisible && (
-                   <div className="w-1/2 h-full bg-[#0F0F0F] overflow-y-auto p-8 custom-scrollbar bg-dotted-pattern">
-                        <div 
-                            className="prose prose-invert max-w-none 
-                            prose-headings:font-bold prose-headings:text-emerald-500 
-                            prose-p:text-gray-300 prose-p:leading-relaxed
-                            prose-a:text-blue-400 prose-img:rounded-xl prose-img:shadow-lg
-                            prose-blockquote:border-l-emerald-500 prose-blockquote:bg-[#1A1A1A]
-                            prose-code:text-emerald-300 prose-code:bg-[#222] prose-code:rounded prose-code:px-1"
-                            dangerouslySetInnerHTML={{ __html: parseMarkdown(localContent) }}
-                        />
-                   </div>
+               {/* Resizer Handle */}
+               {viewMode === 'split' && (
+                  <div 
+                    className="w-2 -ml-1 h-full cursor-col-resize z-50 flex items-center justify-center group hover:bg-emerald-500/10 transition-colors"
+                    onMouseDown={startResizing}
+                  >
+                    <div className="w-0.5 h-8 bg-[#333] group-hover:bg-emerald-500 rounded-full transition-colors" />
+                  </div>
                )}
+
+               {/* Right: Preview */}
+               <div 
+                   style={{ 
+                       width: viewMode === 'split' ? `${100 - splitPos}%` : viewMode === 'preview' ? '100%' : '0%',
+                       display: viewMode === 'edit' ? 'none' : 'block',
+                       pointerEvents: isDragging ? 'none' : 'auto' // Prevent iframe interference while dragging
+                   }}
+                   className="h-full bg-[#0F0F0F] overflow-y-auto custom-scrollbar bg-dotted-pattern"
+               >
+                    <div 
+                        className="prose prose-invert max-w-none p-8
+                        prose-headings:font-bold prose-headings:text-emerald-500 
+                        prose-p:text-gray-300 prose-p:leading-relaxed
+                        prose-a:text-blue-400 prose-img:rounded-xl prose-img:shadow-lg
+                        prose-blockquote:border-l-emerald-500 prose-blockquote:bg-[#1A1A1A]
+                        prose-code:text-emerald-300 prose-code:bg-[#222] prose-code:rounded prose-code:px-1"
+                        dangerouslySetInnerHTML={{ __html: parseMarkdown(localContent) }}
+                    />
+               </div>
              </>
            ) : (
                <div className="w-full h-full flex items-center justify-center text-gray-500">
