@@ -19,7 +19,8 @@ export const parseMarkdown = (text: string): string => {
       return id;
   });
 
-  // Standard Sanitize for the rest
+  // Standard Sanitize for the rest (very simple approach)
+  // Note: For a real app, use DOMPurify
   html = html
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -59,6 +60,7 @@ export const parseMarkdown = (text: string): string => {
   html = html.replace(/^\[x\] (.*$)/gim, '<li class="flex items-center gap-2"><input type="checkbox" checked disabled class="mr-2 accent-emerald-500 h-4 w-4 rounded border-gray-600 bg-[#222]"> <span class="text-gray-500 line-through">$1</span></li>');
 
   // Wrap consecutive lis in ul (simple regex approach)
+  // Note: This regex is simple and might not handle nested lists perfectly
   html = html.replace(/((<li.*>.*<\/li>\n?)+)/gim, '<ul class="my-4 space-y-1">$1</ul>');
 
   // Code Blocks
@@ -81,16 +83,16 @@ export const parseMarkdown = (text: string): string => {
   });
 
   // Paragraphs (newlines to <br> or <p>)
-  // Simple logic: double newline is new paragraph
-  html = html.replace(/\n\n/g, '</p><p class="mb-4">');
-  // Wrap content in initial p if not starting with block level or HTML tags we know
-  if (!html.trim().startsWith('<')) {
-      html = '<p class="mb-4">' + html + '</p>';
-  }
-
-  // HTML Colors (from slash command)
-  // We allow spans with style color
-  html = html.replace(/&lt;span style="color:(.*?)"&gt;(.*?)&lt;\/span&gt;/gim, '<span style="color:$1">$2</span>');
+  // If line starts with < (and not protected media), assume it's a block tag we already made
+  const lines = html.split('\n');
+  const processedLines = lines.map(line => {
+      const trimmed = line.trim();
+      if (!trimmed) return '';
+      if (trimmed.startsWith('<')) return trimmed; // already HTML
+      return `<p class="mb-4">${trimmed}</p>`;
+  });
+  
+  html = processedLines.join('\n');
 
   return html;
 };

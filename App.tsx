@@ -5,17 +5,58 @@ import { AISettingsModal } from './components/AISettingsModal';
 import { Button } from './components/ui/Button';
 import { LLMService } from './services/llmService';
 import { htmlToMarkdown, htmlToText } from './services/converter';
-import { FloatingToolbar } from './components/FloatingToolbar';
+import { parseMarkdown } from './services/markdown';
 import { SlashCommandMenu, SlashCommand } from './components/SlashCommandMenu';
-import { RichEditor } from './components/RichEditor';
 import { VoiceModeModal } from './components/VoiceModeModal';
 import { ChatMessage } from './types';
 import { 
   Settings, Sparkles, Plus, FileText, ChevronRight, MoreHorizontal, Zap,
   Bold, Italic, List, PenLine, Trash2, Edit2, Image as ImageIcon, 
   Table as TableIcon, Download, Upload, File, FileCode, Printer, ChevronDown, Mic,
-  Heading1, Heading2, Heading3, ListOrdered, CheckSquare, Quote, Code, Minus, Video, Play, Type
+  Heading1, Heading2, Heading3, ListOrdered, CheckSquare, Quote, Code, Minus, Video, Type,
+  Eye, EyeOff
 } from 'lucide-react';
+
+// Helper to calculate caret coordinates in a textarea
+const getCaretCoordinates = (element: HTMLTextAreaElement, position: number) => {
+  const div = document.createElement('div');
+  const style = window.getComputedStyle(element);
+  
+  // Copy styles to mirror div
+  Array.from(style).forEach(prop => {
+    div.style.setProperty(prop, style.getPropertyValue(prop));
+  });
+
+  div.style.position = 'absolute';
+  div.style.top = '0';
+  div.style.left = '0';
+  div.style.visibility = 'hidden';
+  div.style.height = 'auto';
+  div.style.width = style.width; 
+  div.style.whiteSpace = 'pre-wrap';
+  div.style.overflowWrap = 'break-word';
+
+  // Content up to caret
+  div.textContent = element.value.substring(0, position);
+  
+  const span = document.createElement('span');
+  span.textContent = element.value.substring(position) || '.'; // Ensure span has height
+  div.appendChild(span);
+  
+  document.body.appendChild(div);
+  
+  const spanOffsetLeft = span.offsetLeft;
+  const spanOffsetTop = span.offsetTop;
+  
+  const rect = element.getBoundingClientRect();
+  
+  document.body.removeChild(div);
+
+  return {
+    left: rect.left + spanOffsetLeft - element.scrollLeft,
+    top: rect.top + spanOffsetTop - element.scrollTop
+  };
+};
 
 const EditorWorkspace = () => {
   const { setSettingsOpen, config, connectionStatus } = useAI();
@@ -26,33 +67,70 @@ const EditorWorkspace = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [isVoiceModeOpen, setIsVoiceModeOpen] = useState(false);
+  const [isPreviewVisible, setIsPreviewVisible] = useState(true);
 
   // Slash Command State
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
   const [slashMenuPos, setSlashMenuPos] = useState({ top: 0, left: 0 });
 
-  const editorRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const headerTitleRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Helper for inserting HTML
-  const insertHtml = (html: string) => {
-    document.execCommand('insertHTML', false, html);
-  };
-  
-  const execFormat = (command: string, value?: string) => {
-    document.execCommand(command, false, value);
-    editorRef.current?.focus();
+  // --- HTML/MD State Sync ---
+  // We treat activeNote.content as the Source of Truth.
+  // If legacy notes are HTML, we convert to MD on load.
+  const [localContent, setLocalContent] = useState("");
+
+  useEffect(() => {
+    if (activeNote) {
+        // Simple heuristic: If it starts with a tag, it might be legacy HTML
+        const isLikelyHtml = /^\s*<[^>]+>/i.test(activeNote.content);
+        if (isLikelyHtml) {
+            setLocalContent(htmlToMarkdown(activeNote.content));
+        } else {
+            setLocalContent(activeNote.content);
+        }
+    } else {
+        setLocalContent("");
+    }
+  }, [activeNoteId]);
+
+  const handleContentChange = (val: string) => {
+      setLocalContent(val);
+      if (activeNote) {
+          updateNote(activeNote.id, { content: val });
+      }
   };
 
-  const insertVideo = (url: string) => {
-    let html = '';
-    // Simple robust detection
-    const isYoutube = url.includes('youtube.com') || url.includes('youtu.be');
-    
-    if (isYoutube) {
-        // Extract ID
-        let videoId = '';
+  // Helper to insert text at cursor
+  const insertTextAtCursor = (text: string, cursorOffset = 0) => {
+      if (!textareaRef.current) return;
+      
+      const start = textareaRef.current.selectionStart;
+      const end = textareaRef.current.selectionEnd;
+      const currentVal = textareaRef.current.value;
+      
+      const newVal = currentVal.substring(0, start) + text + currentVal.substring(end);
+      
+      handleContentChange(newVal);
+      
+      // Reset cursor position
+      setTimeout(() => {
+          if (textareaRef.current) {
+              textareaRef.current.focus();
+              textareaRef.current.setSelectionRange(start + text.length + cursorOffset, start + text.length + cursorOffset);
+          }
+      }, 0);
+  };
+
+  const insertVideoBlock = () => {
+      const url = prompt("Enter Video URL (YouTube or MP4):");
+      if (!url) return;
+
+      // Simple robust detection
+      let videoId = '';
+      if (url.includes('youtube.com') || url.includes('youtu.be')) {
         if (url.includes('youtu.be')) {
             videoId = url.split('/').pop() || '';
         } else if (url.includes('v=')) {
@@ -60,70 +138,66 @@ const EditorWorkspace = () => {
         } else if (url.includes('embed/')) {
             videoId = url.split('embed/')[1]?.split('?')[0] || '';
         }
+      }
 
-        if (videoId) {
-             html = `<div class="aspect-video my-6 rounded-xl overflow-hidden border border-[#333] shadow-lg"><iframe src="https://www.youtube.com/embed/${videoId}" class="w-full h-full" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div><p><br/></p>`;
-        }
-    } 
-    
-    if (!html) {
-        // Fallback to generic video tag
-        html = `<div class="aspect-video my-6 rounded-xl overflow-hidden border border-[#333] shadow-lg"><video src="${url}" controls class="w-full h-full"></video></div><p><br/></p>`;
-    }
-    
-    insertHtml(html);
+      let block = '';
+      if (videoId) {
+          block = `\n<div class="aspect-video my-6 rounded-xl overflow-hidden border border-[#333] shadow-lg"><iframe src="https://www.youtube.com/embed/${videoId}" class="w-full h-full" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>\n`;
+      } else {
+          block = `\n<div class="aspect-video my-6 rounded-xl overflow-hidden border border-[#333] shadow-lg"><video src="${url}" controls class="w-full h-full"></video></div>\n`;
+      }
+      insertTextAtCursor(block);
   };
 
-  // Define commands with access to component scope (for refs)
   const slashCommands: SlashCommand[] = useMemo(() => [
-      {
-        id: 'text',
-        label: 'Text',
-        icon: Type,
-        description: 'Start writing with plain text',
-        action: () => execFormat('formatBlock', 'P')
-      },
       {
         id: 'h1',
         label: 'Heading 1',
         icon: Heading1,
         description: 'Big section heading',
-        action: () => execFormat('formatBlock', 'H1')
+        action: () => insertTextAtCursor('# ')
       },
       {
         id: 'h2',
         label: 'Heading 2',
         icon: Heading2,
         description: 'Medium section heading',
-        action: () => execFormat('formatBlock', 'H2')
+        action: () => insertTextAtCursor('## ')
       },
       {
         id: 'h3',
         label: 'Heading 3',
         icon: Heading3,
         description: 'Small section heading',
-        action: () => execFormat('formatBlock', 'H3')
+        action: () => insertTextAtCursor('### ')
+      },
+      {
+        id: 'text',
+        label: 'Text',
+        icon: Type,
+        description: 'Plain text paragraph',
+        action: () => insertTextAtCursor('')
       },
       {
         id: 'bullet',
         label: 'Bullet List',
         icon: List,
-        description: 'Create a simple bulleted list',
-        action: () => execFormat('insertUnorderedList')
+        description: 'Create a bulleted list',
+        action: () => insertTextAtCursor('- ')
       },
       {
         id: 'numbered',
         label: 'Numbered List',
         icon: ListOrdered,
         description: 'Create a numbered list',
-        action: () => execFormat('insertOrderedList')
+        action: () => insertTextAtCursor('1. ')
       },
       {
         id: 'todo',
         label: 'To-Do List',
         icon: CheckSquare,
         description: 'Track tasks with a checklist',
-        action: () => insertHtml('<ul class="my-2 space-y-1"><li><input type="checkbox" class="mr-2 accent-emerald-500 h-4 w-4 rounded border-gray-600 bg-[#222]"> Todo item</li></ul><p><br/></p>')
+        action: () => insertTextAtCursor('- [ ] ')
       },
       {
         id: 'image-upload',
@@ -139,7 +213,7 @@ const EditorWorkspace = () => {
         description: 'Embed an image via link',
         action: () => {
             const url = prompt("Enter Image URL:");
-            if(url) execFormat('insertImage', url);
+            if(url) insertTextAtCursor(`![Image](${url})`);
         }
       },
       {
@@ -147,91 +221,120 @@ const EditorWorkspace = () => {
         label: 'Video / YouTube',
         icon: Video,
         description: 'Embed a video from URL or YouTube',
-        action: () => {
-            const url = prompt("Enter Video URL (YouTube or MP4):");
-            if(url) insertVideo(url);
-        }
+        action: () => insertVideoBlock()
       },
       {
         id: 'table',
         label: 'Table',
         icon: TableIcon,
-        description: 'Add a simple 2x2 table',
-        action: () => insertHtml('<table class="border-collapse w-full my-6 text-sm"><thead><tr><th class="border border-[#333] p-3 bg-[#1A1A1A] text-left text-emerald-500">Header 1</th><th class="border border-[#333] p-3 bg-[#1A1A1A] text-left text-emerald-500">Header 2</th></tr></thead><tbody><tr><td class="border border-[#333] p-3">Cell 1</td><td class="border border-[#333] p-3">Cell 2</td></tr></tbody></table><p><br/></p>')
+        description: 'Insert a table template',
+        action: () => insertTextAtCursor('\n| Header 1 | Header 2 |\n| -------- | -------- |\n| Cell 1   | Cell 2   |\n')
       },
       {
         id: 'quote',
         label: 'Quote',
         icon: Quote,
         description: 'Capture a quote',
-        action: () => insertHtml('<blockquote class="border-l-4 border-emerald-500 pl-4 italic my-6 bg-[#1A1A1A] py-3 rounded-r text-gray-300">Quote here</blockquote><p><br/></p>')
+        action: () => insertTextAtCursor('> ')
       },
       {
         id: 'code',
         label: 'Code Block',
         icon: Code,
         description: 'Capture a code snippet',
-        action: () => insertHtml('<pre class="bg-[#111] p-4 rounded-lg border border-[#333] font-mono text-sm text-gray-300 my-6 shadow-inner overflow-x-auto"><code>// Code here</code></pre><p><br/></p>')
+        action: () => insertTextAtCursor('\n```\ncode here\n```\n')
       },
       {
         id: 'divider',
         label: 'Divider',
         icon: Minus,
         description: 'Visually divide blocks',
-        action: () => execFormat('insertHorizontalRule')
+        action: () => insertTextAtCursor('\n---\n')
       }
   ], []);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Intercept navigation when slash menu is open
     if (slashMenuOpen) {
         if (['ArrowUp', 'ArrowDown', 'Enter', 'Escape'].includes(e.key)) {
-            // Prevent editor from handling these keys so the cursor doesn't move
             e.preventDefault(); 
-            // The SlashCommandMenu component has a window capture listener that handles the logic
+            // The SlashCommandMenu component handles the logic via window listeners
             return;
         }
     }
 
     if (e.key === '/') {
-       const selection = window.getSelection();
-       if (selection && selection.rangeCount > 0) {
-           const range = selection.getRangeAt(0);
-           const rect = range.getBoundingClientRect();
-           
-           // Set position based on viewport coordinates (rect is already viewport relative)
-           // We don't need window.scrollY if the menu is fixed. 
-           // However, if the text is near the edge, standard fixed might not be enough, 
-           // but SlashCommandMenu now handles edge collision.
-           setSlashMenuPos({
-               top: rect.bottom + 8, 
-               left: rect.left
-           });
-           setSlashMenuOpen(true);
-       }
+        // Calculate position for menu
+        if (textareaRef.current) {
+            const pos = textareaRef.current.selectionStart;
+            const coords = getCaretCoordinates(textareaRef.current, pos);
+            
+            setSlashMenuPos({
+                top: coords.top + 24, // Slight offset below cursor
+                left: coords.left
+            });
+            setSlashMenuOpen(true);
+        }
     }
   };
 
+  const handleKeyUp = (e: React.KeyboardEvent) => {
+      // Close menu if user backspaces the slash
+      if (slashMenuOpen && e.key === 'Backspace') {
+          // Check if slash still exists? Simpler to just close if it gets weird
+          setSlashMenuOpen(false); 
+      }
+  };
+
   const executeSlashCommand = (command: SlashCommand) => {
-    // Remove the slash that triggered the menu
-    document.execCommand('delete'); 
-    command.action();
+    if (!textareaRef.current) return;
+    
+    // We need to remove the '/' that triggered the menu
+    // We assume the slash is right before the cursor
+    const end = textareaRef.current.selectionEnd;
+    const start = textareaRef.current.selectionStart;
+    const val = textareaRef.current.value;
+
+    // Remove the slash (at start-1)
+    const beforeSlash = val.substring(0, start - 1);
+    const afterSlash = val.substring(end);
+    
+    const newVal = beforeSlash + afterSlash;
+    handleContentChange(newVal);
+
+    // Focus and execute
+    setTimeout(() => {
+        if (textareaRef.current) {
+            textareaRef.current.focus();
+            textareaRef.current.setSelectionRange(start - 1, start - 1);
+            command.action();
+        }
+    }, 0);
+    
     setSlashMenuOpen(false);
-    editorRef.current?.focus();
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+              const base64 = e.target?.result as string;
+              insertTextAtCursor(`\n![Uploaded Image](${base64})\n`);
+          };
+          reader.readAsDataURL(file);
+      }
   };
 
   // --- AI Actions ---
   const handleAIAction = async (promptPrefix: string) => {
-    if (!activeNote?.content) return;
+    if (!localContent) return;
     
-    // Convert current HTML to text/md for the AI context
-    const context = htmlToMarkdown(activeNote.content);
-
     setIsGenerating(true);
     setGeneratedText(""); 
 
     const service = new LLMService(config);
-    const fullPrompt = `${promptPrefix} for the following text. output only the result:\n\n${context}`;
+    const fullPrompt = `${promptPrefix} for the following text. Output in Markdown format:\n\n${localContent}`;
     const messages: ChatMessage[] = [{ role: 'user', content: fullPrompt }];
 
     try {
@@ -246,39 +349,9 @@ const EditorWorkspace = () => {
     }
   };
 
-  const handleInsert = () => {
-      if (!activeNote || !editorRef.current) return;
-      editorRef.current.focus();
-      // Insert AI text as HTML
-      const html = generatedText.replace(/\n/g, '<br/>');
-      document.execCommand('insertHTML', false, html);
+  const handleAIInsert = () => {
+      insertTextAtCursor(`\n\n${generatedText}\n\n`);
       setGeneratedText("");
-  };
-
-  const handleVoiceInsert = (htmlContent: string) => {
-      if (!activeNote || !editorRef.current) return;
-      editorRef.current.focus();
-      document.execCommand('insertHTML', false, htmlContent);
-  };
-
-  const handleDiscard = () => {
-      setGeneratedText("");
-  };
-
-  const insertImage = () => {
-      fileInputRef.current?.click();
-  };
-
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) {
-          const reader = new FileReader();
-          reader.onload = (e) => {
-              const base64 = e.target?.result as string;
-              execFormat('insertImage', base64);
-          };
-          reader.readAsDataURL(file);
-      }
   };
 
   const handleExport = (type: 'md' | 'txt' | 'pdf') => {
@@ -290,19 +363,9 @@ const EditorWorkspace = () => {
           return;
       }
 
-      let content = '';
-      let mime = 'text/plain';
-      let ext = 'txt';
-
-      if (type === 'md') {
-          content = htmlToMarkdown(activeNote.content);
-          mime = 'text/markdown';
-          ext = 'md';
-      } else {
-          content = htmlToText(activeNote.content);
-          mime = 'text/plain';
-          ext = 'txt';
-      }
+      const content = localContent;
+      const mime = type === 'md' ? 'text/markdown' : 'text/plain';
+      const ext = type;
 
       const blob = new Blob([content], { type: mime });
       const url = URL.createObjectURL(blob);
@@ -322,10 +385,10 @@ const EditorWorkspace = () => {
   };
 
   return (
-    <div className="flex min-h-screen bg-[#0F0F0F] text-gray-100 font-sans">
+    <div className="flex min-h-screen bg-[#0F0F0F] text-gray-100 font-sans overflow-hidden">
       
-      {/* Sidebar - Sticky and Fixed Height - HIDDEN ON PRINT */}
-      <div className="w-64 bg-[#111111] border-r border-[#222] flex flex-col min-w-[250px] z-30 sticky top-0 h-screen print:hidden">
+      {/* Sidebar */}
+      <div className="w-64 bg-[#111111] border-r border-[#222] flex flex-col min-w-[250px] shrink-0 print:hidden z-20">
         <div className="p-4 border-b border-[#222]">
           <div className="flex items-center gap-2 text-emerald-500 font-bold text-xl tracking-tight">
             <Zap className="w-5 h-5 fill-current" />
@@ -362,10 +425,10 @@ const EditorWorkspace = () => {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col min-w-0 relative">
+      <div className="flex-1 flex flex-col min-w-0 relative h-screen">
         
-        {/* Header - HIDDEN ON PRINT */}
-        <header className="h-14 border-b border-[#222] bg-[#111111] flex items-center justify-between px-6 z-20 print:hidden sticky top-0">
+        {/* Header */}
+        <header className="h-14 border-b border-[#222] bg-[#111111] flex items-center justify-between px-6 shrink-0 print:hidden z-20">
            <div className="flex items-center gap-2 text-sm text-gray-400 w-full mr-4">
               <span className="hidden sm:inline shrink-0">My Workspace</span>
               <ChevronRight className="w-4 h-4 hidden sm:inline shrink-0" />
@@ -379,7 +442,18 @@ const EditorWorkspace = () => {
            </div>
 
            <div className="flex items-center gap-3 shrink-0">
-              
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => setIsPreviewVisible(!isPreviewVisible)}
+                className={isPreviewVisible ? "text-emerald-400" : "text-gray-400"}
+                title="Toggle Preview"
+              >
+                 {isPreviewVisible ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+              </Button>
+
+              <div className="h-4 w-px bg-[#333] mx-1" />
+
               <div className="relative">
                 <Button 
                     variant="ghost" 
@@ -391,8 +465,7 @@ const EditorWorkspace = () => {
                     <ChevronDown className="w-3 h-3" />
                 </Button>
                 {isExportMenuOpen && (
-                     <div className="absolute right-0 top-full mt-2 w-48 bg-[#222] border border-[#333] rounded-lg shadow-xl z-20 py-1">
-                        <div className="px-3 py-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-[#333]">Export As</div>
+                     <div className="absolute right-0 top-full mt-2 w-48 bg-[#222] border border-[#333] rounded-lg shadow-xl z-30 py-1">
                         <button onClick={() => handleExport('md')} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-300 hover:bg-[#333] hover:text-white">
                             <FileCode className="w-4 h-4" /> Markdown (.md)
                         </button>
@@ -405,8 +478,6 @@ const EditorWorkspace = () => {
                      </div>
                 )}
               </div>
-
-              <div className="h-4 w-px bg-[#333] mx-1" />
 
               <div className="flex items-center gap-2 px-3 py-1.5 bg-[#1A1A1A] rounded-full border border-[#333]">
                 <div className={`w-2 h-2 rounded-full transition-colors duration-300 ${getStatusColor()}`} title={connectionStatus} />
@@ -421,7 +492,7 @@ const EditorWorkspace = () => {
                     <MoreHorizontal className="w-4 h-4" />
                 </Button>
                 {isMenuOpen && (
-                    <div className="absolute right-0 top-full mt-2 w-48 bg-[#222] border border-[#333] rounded-lg shadow-xl z-20 py-1">
+                    <div className="absolute right-0 top-full mt-2 w-48 bg-[#222] border border-[#333] rounded-lg shadow-xl z-30 py-1">
                         <button 
                             className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-300 hover:bg-[#333] hover:text-white"
                             onClick={() => {
@@ -446,14 +517,14 @@ const EditorWorkspace = () => {
            </div>
         </header>
 
-        {/* Toolbar - HIDDEN ON PRINT */}
-        <div className="h-12 border-b border-[#222] bg-[#161616] flex items-center px-6 gap-2 overflow-x-auto no-scrollbar z-20 sticky top-14 print:hidden">
+        {/* Toolbar */}
+        <div className="h-12 border-b border-[#222] bg-[#161616] flex items-center px-6 gap-2 overflow-x-auto no-scrollbar shrink-0 print:hidden z-10">
             <div className="flex items-center gap-1 pr-4 border-r border-[#333]">
-                <button onClick={() => execFormat('bold')} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded" title="Bold"><Bold className="w-4 h-4" /></button>
-                <button onClick={() => execFormat('italic')} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded" title="Italic"><Italic className="w-4 h-4" /></button>
-                <button onClick={() => execFormat('insertUnorderedList')} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded" title="Bullet List"><List className="w-4 h-4" /></button>
-                <button onClick={insertImage} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded" title="Insert Image"><ImageIcon className="w-4 h-4" /></button>
-                <button onClick={() => execFormat('formatBlock', 'H2')} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded font-serif font-bold text-xs" title="Heading">H2</button>
+                <button onClick={() => insertTextAtCursor('**bold text**')} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded" title="Bold"><Bold className="w-4 h-4" /></button>
+                <button onClick={() => insertTextAtCursor('*italic text*')} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded" title="Italic"><Italic className="w-4 h-4" /></button>
+                <button onClick={() => insertTextAtCursor('- ')} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded" title="Bullet List"><List className="w-4 h-4" /></button>
+                <button onClick={() => fileInputRef.current?.click()} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded" title="Insert Image"><ImageIcon className="w-4 h-4" /></button>
+                <button onClick={() => insertTextAtCursor('## ')} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded font-serif font-bold text-xs" title="Heading">H2</button>
             </div>
             
             <div className="flex items-center gap-2 pl-2 whitespace-nowrap flex-1">
@@ -475,68 +546,73 @@ const EditorWorkspace = () => {
             </Button>
         </div>
 
-        {/* Editor Canvas with Dotted Background */}
-        <div className="flex-1 bg-dotted-pattern relative cursor-text print:bg-white" onClick={() => editorRef.current?.focus()}>
+        {/* Split Editor Area */}
+        <div className="flex-1 flex overflow-hidden relative">
            {activeNote ? (
-               <div className="max-w-4xl mx-auto py-12 px-8 min-h-[calc(100vh-7rem)] print:p-0 print:min-h-0">
-                  <input 
-                    className="w-full bg-transparent text-4xl font-bold text-white placeholder-gray-600 border-none focus:outline-none focus:ring-0 mb-6 print:text-black"
-                    placeholder="Untitled Note"
-                    value={activeNote.title}
-                    onChange={(e) => updateNote(activeNote.id, { title: e.target.value })}
-                  />
-
-                  <RichEditor 
-                    editorRef={editorRef}
-                    initialContent={activeNote.content}
-                    onChange={(html) => updateNote(activeNote.id, { content: html })}
+             <>
+               {/* Left: Markdown Input */}
+               <div className={`h-full flex flex-col border-r border-[#222] bg-[#111] transition-all duration-300 ${isPreviewVisible ? 'w-1/2' : 'w-full'}`}>
+                 <textarea 
+                    ref={textareaRef}
+                    className="flex-1 w-full bg-transparent text-gray-300 font-mono text-sm p-6 resize-none focus:outline-none custom-scrollbar leading-relaxed"
+                    placeholder="# Start typing your note here... (Type / for commands)"
+                    value={localContent}
+                    onChange={(e) => handleContentChange(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    onSelect={() => { /* Trigger toolbar check */ }}
-                    className="print:text-black print:prose-p:text-black print:prose-headings:text-black"
-                  />
-
-                  {/* Hidden File Input for Images */}
-                  <input 
-                    type="file" 
-                    ref={fileInputRef}
-                    className="hidden"
-                    accept="image/*"
-                    onChange={handleImageUpload}
-                  />
-                        
-                  {/* Floating Toolbar - HIDDEN ON PRINT */}
-                  <div className="print:hidden">
-                    <FloatingToolbar 
-                        editorRef={editorRef} 
-                        onFormat={execFormat} 
-                        onAI={handleAIAction}
-                    />
-                  </div>
-
-                  {/* AI Output Area - HIDDEN ON PRINT */}
-                  { (isGenerating || generatedText) && (
-                      <div className="mt-8 border-t border-[#333] pt-6 animate-in fade-in slide-in-from-bottom-4 duration-500 print:hidden">
-                         <div className="flex items-center gap-2 mb-3 text-emerald-400 text-sm font-bold uppercase tracking-wider">
-                            <Sparkles className="w-4 h-4" />
-                            AI Analysis
-                         </div>
-                         <div className="p-6 rounded-xl bg-[#161616] border border-[#2A2A2A] text-gray-200 leading-relaxed shadow-lg whitespace-pre-wrap">
-                            {generatedText}
-                            {isGenerating && <span className="inline-block w-2 h-4 bg-emerald-500 ml-1 animate-pulse"/>}
-                         </div>
-                         <div className="flex gap-2 mt-3 justify-end">
-                            <Button size="sm" variant="ghost" onClick={handleDiscard} disabled={isGenerating}>Discard</Button>
-                            <Button size="sm" className="bg-emerald-600 hover:bg-emerald-500 text-white" onClick={handleInsert} disabled={isGenerating}>Insert into Note</Button>
-                         </div>
-                      </div>
-                  )}
-                  
-                  <div className="h-20 print:hidden" />
+                    onKeyUp={handleKeyUp}
+                    spellCheck={false}
+                 />
                </div>
+
+               {/* Right: Preview */}
+               {isPreviewVisible && (
+                   <div className="w-1/2 h-full bg-[#0F0F0F] overflow-y-auto p-8 custom-scrollbar bg-dotted-pattern">
+                        <div 
+                            className="prose prose-invert max-w-none 
+                            prose-headings:font-bold prose-headings:text-emerald-500 
+                            prose-p:text-gray-300 prose-p:leading-relaxed
+                            prose-a:text-blue-400 prose-img:rounded-xl prose-img:shadow-lg
+                            prose-blockquote:border-l-emerald-500 prose-blockquote:bg-[#1A1A1A]
+                            prose-code:text-emerald-300 prose-code:bg-[#222] prose-code:rounded prose-code:px-1"
+                            dangerouslySetInnerHTML={{ __html: parseMarkdown(localContent) }}
+                        />
+                   </div>
+               )}
+             </>
            ) : (
-               <div className="flex items-center justify-center h-full text-gray-500 print:hidden">
+               <div className="w-full h-full flex items-center justify-center text-gray-500">
                    Select a note or create a new one
                </div>
+           )}
+
+           {/* Hidden File Input */}
+           <input 
+                type="file" 
+                ref={fileInputRef}
+                className="hidden"
+                accept="image/*"
+                onChange={handleImageUpload}
+           />
+
+           {/* AI Output Overlay */}
+           { (isGenerating || generatedText) && (
+              <div className="absolute bottom-6 right-6 w-96 z-50 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                 <div className="p-1 rounded-xl bg-gradient-to-r from-emerald-500/20 to-blue-500/20 backdrop-blur-md border border-[#333] shadow-2xl">
+                    <div className="bg-[#161616] rounded-lg p-4">
+                        <div className="flex items-center gap-2 mb-3 text-emerald-400 text-xs font-bold uppercase tracking-wider">
+                            <Sparkles className="w-3 h-3" /> AI Analysis
+                        </div>
+                        <div className="max-h-60 overflow-y-auto text-sm text-gray-200 leading-relaxed whitespace-pre-wrap mb-3 custom-scrollbar">
+                            {generatedText}
+                            {isGenerating && <span className="inline-block w-1 h-3 bg-emerald-500 ml-1 animate-pulse"/>}
+                        </div>
+                        <div className="flex gap-2 justify-end pt-2 border-t border-[#333]">
+                            <Button size="sm" variant="ghost" onClick={() => setGeneratedText("")} disabled={isGenerating} className="h-7 text-xs">Discard</Button>
+                            <Button size="sm" className="bg-emerald-600 hover:bg-emerald-500 h-7 text-xs" onClick={handleAIInsert} disabled={isGenerating}>Insert</Button>
+                        </div>
+                    </div>
+                 </div>
+              </div>
            )}
         </div>
       </div>
@@ -546,7 +622,7 @@ const EditorWorkspace = () => {
         <VoiceModeModal 
             isOpen={isVoiceModeOpen} 
             onClose={() => setIsVoiceModeOpen(false)} 
-            onInsert={handleVoiceInsert}
+            onInsert={(text) => insertTextAtCursor(text)}
         />
         <SlashCommandMenu 
             isOpen={slashMenuOpen} 

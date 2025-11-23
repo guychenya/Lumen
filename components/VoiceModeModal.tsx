@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Mic, Square, Sparkles, X, Wand2, AlertCircle, RefreshCw, Activity } from 'lucide-react';
 import { AudioVisualizer } from './AudioVisualizer';
@@ -74,8 +73,8 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
     }
 
     const recognition = new SpeechRecognition();
-    recognition.continuous = false; // Manual continuous for robustness
-    recognition.interimResults = true; // CRITICAL: Allows seeing text while speaking
+    recognition.continuous = false; 
+    recognition.interimResults = true; 
     recognition.lang = 'en-US';
     return recognition;
   };
@@ -130,10 +129,9 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
              setStage('error');
              setErrorMsg("Microphone access denied.");
         } else if (event.error === 'network') {
-             // In non-Chrome browsers, network error often means "API key missing"
              if (!navigator.userAgent.includes('Chrome')) {
                  setStage('error');
-                 setErrorMsg("Connection failed. This browser (Brave/Opera/etc) often blocks speech API. Please try Chrome.");
+                 setErrorMsg("Connection failed. This browser often blocks speech API. Please try Chrome.");
              }
         }
       };
@@ -191,18 +189,22 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
 
   const processWithAI = async (textToProcess: string) => {
     setStage('processing');
-    setAiResponse(''); // Reset streaming buffer
+    setAiResponse(''); 
     const service = new LLMService(config);
     
+    // Updated prompt to avoid hallucinating todo lists
     const prompt = `
-      I have recorded the following raw thoughts/notes:
+      I have recorded the following voice note:
       "${textToProcess}"
 
-      Please restructure this into a clean, professional, and cohesive note.
-      - Fix grammar and flow.
-      - Use headers (<h2>) and bullet points (<ul>) where appropriate.
-      - Keep the tone professional and clear.
-      - Return only the HTML content.
+      Your task is to transcribe and lightly format this text into Markdown.
+      Rules:
+      1. Correct basic grammar and spelling mistakes.
+      2. If the user is clearly dictating a structure (like "Heading: Plan"), use Markdown headers (#).
+      3. If the user is listing items, use bullet points (-).
+      4. DO NOT create a checklist or todo list unless the user explicitly says "create a checklist" or "todo".
+      5. If the text is short or conversational, just return it as a clean paragraph.
+      6. Output ONLY the Markdown text.
     `;
 
     try {
@@ -242,7 +244,7 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
                   <p className="text-sm text-gray-400 flex items-center gap-2">
                       {stage === 'recording' && "Listening..."}
                       {stage === 'recording' && isSpeechDetected && <span className="text-emerald-500 text-xs px-1.5 py-0.5 bg-emerald-900/30 rounded border border-emerald-500/30">Voice Detected</span>}
-                      {stage === 'processing' && "Synthesizing cohesive note..."}
+                      {stage === 'processing' && "Formatting..."}
                       {stage === 'error' && "Error occurred"}
                   </p>
               </div>
@@ -262,7 +264,7 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
                                 <Wand2 className="w-8 h-8 animate-spin text-emerald-500" />
                                 <Sparkles className="w-6 h-6 animate-pulse text-purple-500" />
                             </div>
-                            <span className="text-emerald-400 font-medium animate-pulse">Generating Summary...</span>
+                            <span className="text-emerald-400 font-medium animate-pulse">Formatting Markdown...</span>
                         </>
                    ) : (
                        <div className="text-sm text-gray-600">Microphone inactive</div>
@@ -283,10 +285,9 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
                 
                 <div className="p-4 bg-[#1A1A1A] rounded-xl border border-[#333] min-h-[120px] max-h-[300px] overflow-y-auto transition-all custom-scrollbar">
                     {stage === 'processing' ? (
-                         <div 
-                            className="prose prose-invert prose-sm max-w-none prose-p:leading-relaxed prose-headings:text-emerald-400"
-                            dangerouslySetInnerHTML={{ __html: aiResponse || '<span class="text-gray-600 italic">Thinking...</span>' }} 
-                         />
+                         <div className="whitespace-pre-wrap text-gray-200 font-mono text-sm">
+                            {aiResponse || 'Thinking...'}
+                         </div>
                     ) : (
                         <div className="text-gray-200 leading-relaxed text-lg font-light">
                              {finalTranscript || interimTranscript ? (
@@ -313,7 +314,7 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
         {/* Footer Actions */}
         <div className="p-6 border-t border-[#222] bg-[#161616] flex justify-between items-center">
              <div className="text-xs text-gray-500">
-                Lumen will automatically format your speech into a note.
+                Lumen will automatically format your speech into Markdown.
              </div>
 
              <div className="flex gap-3">
@@ -323,7 +324,7 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
                      </Button>
                  ) : stage === 'recording' ? (
                      <Button onClick={handleFinish} className="bg-red-600 hover:bg-red-500 px-8 py-3 h-auto text-base shadow-lg shadow-red-900/20">
-                         <Square className="w-4 h-4 mr-2" /> Stop & Summarize
+                         <Square className="w-4 h-4 mr-2" /> Stop & Format
                      </Button>
                  ) : (
                      <Button variant="ghost" onClick={onClose}>Cancel</Button>

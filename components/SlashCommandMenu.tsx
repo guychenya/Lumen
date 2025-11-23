@@ -64,7 +64,7 @@ export const SlashCommandMenu: React.FC<Props> = ({ isOpen, position, commands, 
 
   // Calculate position to keep in viewport
   const MENU_WIDTH = 300;
-  const MENU_HEIGHT = 320; // Approximate max height
+  const MENU_HEIGHT = 320; 
   const PADDING = 16;
   
   let top = position.top;
@@ -79,7 +79,7 @@ export const SlashCommandMenu: React.FC<Props> = ({ isOpen, position, commands, 
 
   // Vertical flipping
   if (top + MENU_HEIGHT > window.innerHeight - PADDING) {
-    top = position.top - MENU_HEIGHT - 40; // Flip up above the cursor line
+    top = position.top - MENU_HEIGHT - 40; 
     origin = 'bottom';
   }
 
@@ -92,7 +92,7 @@ export const SlashCommandMenu: React.FC<Props> = ({ isOpen, position, commands, 
 
   return (
     <div 
-      className="fixed z-[9999] w-[300px] bg-[#1C1C1C] border border-[#333] rounded-xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100"
+      className="fixed z-[99999] w-[300px] bg-[#1C1C1C] border border-[#333] rounded-xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100"
       style={menuStyle}
     >
       <div className="px-3 py-2 border-b border-[#2A2A2A] bg-[#161616] text-xs font-semibold text-gray-500 uppercase tracking-wider flex justify-between items-center">
