@@ -24,6 +24,11 @@ export const AudioVisualizer: React.FC<Props> = ({ stream, isListening }) => {
     const audioCtx = new AudioContext();
     audioContextRef.current = audioCtx;
 
+    // CRITICAL: Browsers suspend audio context until user interaction. Force resume.
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+
     const analyser = audioCtx.createAnalyser();
     analyser.fftSize = 2048; // Higher resolution for smoothness
     analyser.smoothingTimeConstant = 0.8;

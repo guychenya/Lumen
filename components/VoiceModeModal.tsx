@@ -22,11 +22,13 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
   const [errorMsg, setErrorMsg] = useState('');
   
   const recognitionRef = useRef<any>(null);
+  const shouldBeRecording = useRef(false);
 
   useEffect(() => {
     if (isOpen) {
       setTranscript('');
       setErrorMsg('');
+      shouldBeRecording.current = true;
       startRecording();
     } else {
       stopEverything();
@@ -35,6 +37,7 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
   }, [isOpen]);
 
   const cleanupResources = () => {
+    shouldBeRecording.current = false;
     if (recognitionRef.current) {
         try {
             recognitionRef.current.stop();
@@ -94,19 +97,29 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
         console.warn("Speech recognition error:", event.error);
         if (event.error === 'no-speech') return; // Ignore transient silence
         
-        cleanupResources();
-        setMediaStream(null);
-        setStage('error');
-
+        // Only treat as hard error if we aren't trying to record anymore
+        // or if it's a fatal permission/network error
         if (event.error === 'network') {
+             cleanupResources();
+             setMediaStream(null);
+             setStage('error');
              setErrorMsg("Network Error: Connection failed. This usually happens in browsers other than Chrome. Please try Chrome or check your internet.");
         } else if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+             cleanupResources();
+             setMediaStream(null);
+             setStage('error');
              setErrorMsg("Microphone access denied. Please allow permissions in your browser.");
-        } else if (event.error === 'aborted') {
-             // Ignore aborted, usually manual stop
-             setStage('idle'); 
-        } else {
-             setErrorMsg(`Speech Recognition Error: ${event.error}`);
+        } 
+      };
+
+      recognition.onend = () => {
+        // Keep-alive logic: If we should still be recording but recognition stopped (browser quirk), restart it.
+        if (shouldBeRecording.current && stage !== 'error') {
+            try {
+                recognition.start();
+            } catch (e) {
+                // Ignore errors if already started
+            }
         }
       };
 
@@ -121,6 +134,8 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
   };
 
   const handleFinish = () => {
+    // Explicitly set flag to false so onend doesn't restart it
+    shouldBeRecording.current = false;
     cleanupResources();
     setMediaStream(null);
     setStage('idle');
@@ -136,6 +151,7 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
     stopEverything();
     setErrorMsg('');
     setStage('idle');
+    shouldBeRecording.current = true;
     // Small delay to allow cleanup to complete
     setTimeout(() => {
         startRecording();
