@@ -1,11 +1,9 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Mic, Square, Sparkles, X, Wand2, AlertCircle, RefreshCw, Activity } from 'lucide-react';
 import { AudioVisualizer } from './AudioVisualizer';
 import { Button } from './ui/Button';
 import { useAI } from '../context/AIContext';
 import { LLMService } from '../services/llmService';
-import { ChatMessage } from '../types';
 
 interface Props {
   isOpen: boolean;
@@ -194,34 +192,30 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
     setAiResponse(''); 
     const service = new LLMService(config);
     
-    // Refined prompt using a system message for better context and formatting.
-    // This improves analysis and can mitigate context length issues.
-    const messages: ChatMessage[] = [
-      {
-        role: 'system',
-        content: `You are an expert at formatting raw transcribed text into clean Markdown.
-- Correct basic grammar and spelling mistakes.
-- Use Markdown headers (#) for dictated topics or sections.
-- Use bullet points (-) for lists of items.
-- DO NOT use checklists (- [ ]) unless the user explicitly says "checklist" or "todo".
-- If the text is short or conversational, return it as a clean paragraph.
-- Your entire output should be only the formatted Markdown content. Do not add any extra commentary.`
-      },
-      {
-        role: 'user',
-        content: textToProcess
-      }
-    ];
+    // Updated prompt to avoid hallucinating todo lists
+    const prompt = `
+      I have recorded the following voice note:
+      "${textToProcess}"
+
+      Your task is to transcribe and lightly format this text into Markdown.
+      Rules:
+      1. Correct basic grammar and spelling mistakes.
+      2. If the user is clearly dictating a structure (like "Heading: Plan"), use Markdown headers (#).
+      3. If the user is listing items, use bullet points (-).
+      4. DO NOT create a checklist or todo list unless the user explicitly says "create a checklist" or "todo".
+      5. If the text is short or conversational, just return it as a clean paragraph.
+      6. Output ONLY the Markdown text.
+    `;
 
     try {
         let fullResult = '';
-        const generator = service.streamResponse(messages);
+        const generator = service.streamResponse([{ role: 'user', content: prompt }]);
         for await (const chunk of generator) {
             fullResult += chunk;
             setAiResponse(prev => prev + chunk); // Live update
         }
         
-        // Allow user to read the summary briefly before closing
+        // Allow user to read the summary briefly
         setTimeout(() => {
             onInsert(fullResult);
             onClose();
@@ -229,52 +223,51 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
 
     } catch (e) {
         setStage('error');
-        // The error from the stream is already formatted, so we can display it directly.
-        setErrorMsg(aiResponse || "AI Processing Failed. Please check your settings.");
+        setErrorMsg("AI Processing Failed. Please check settings.");
     }
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-300">
-      <div className="w-full max-w-2xl bg-[#111] border border-[#333] rounded-2xl shadow-2xl overflow-hidden flex flex-col relative">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 dark:bg-black/90 backdrop-blur-md animate-in fade-in duration-300">
+      <div className="w-full max-w-2xl bg-white dark:bg-[#111] border border-gray-200 dark:border-[#333] rounded-2xl shadow-2xl overflow-hidden flex flex-col relative">
         
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-[#222]">
+        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-[#222]">
            <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-full ${stage === 'processing' ? 'bg-purple-500/20 animate-pulse' : 'bg-emerald-500/20'}`}>
-                 {stage === 'recording' ? <Mic className="w-5 h-5 text-emerald-400 animate-pulse" /> : <Sparkles className="w-5 h-5 text-purple-400" />}
+              <div className={`p-2 rounded-full ${stage === 'processing' ? 'bg-purple-100 dark:bg-purple-500/20 animate-pulse' : 'bg-emerald-100 dark:bg-emerald-500/20'}`}>
+                 {stage === 'recording' ? <Mic className="w-5 h-5 text-emerald-600 dark:text-emerald-400 animate-pulse" /> : <Sparkles className="w-5 h-5 text-purple-600 dark:text-purple-400" />}
               </div>
               <div>
-                  <h2 className="text-xl font-bold text-white">Voice Mode</h2>
-                  <p className="text-sm text-gray-400 flex items-center gap-2">
+                  <h2 className="text-xl font-bold text-gray-900 dark:text-white">Voice Mode</h2>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-2">
                       {stage === 'recording' && "Listening..."}
-                      {stage === 'recording' && isSpeechDetected && <span className="text-emerald-500 text-xs px-1.5 py-0.5 bg-emerald-900/30 rounded border border-emerald-500/30">Voice Detected</span>}
+                      {stage === 'recording' && isSpeechDetected && <span className="text-emerald-600 dark:text-emerald-500 text-xs px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-900/30 rounded border border-emerald-200 dark:border-emerald-500/30">Voice Detected</span>}
                       {stage === 'processing' && "Formatting..."}
                       {stage === 'error' && "Error occurred"}
                   </p>
               </div>
            </div>
-           <button onClick={onClose} className="text-gray-500 hover:text-white"><X className="w-6 h-6"/></button>
+           <button onClick={onClose} className="text-gray-400 dark:text-gray-500 hover:text-gray-800 dark:hover:text-white"><X className="w-6 h-6"/></button>
         </div>
 
         {/* Visualization Area */}
-        <div className="relative bg-black h-48 flex items-center justify-center border-b border-[#222]">
+        <div className="relative bg-gray-900 dark:bg-black h-48 flex items-center justify-center border-b border-gray-200 dark:border-[#222]">
            {stage === 'recording' ? (
                <AudioVisualizer stream={mediaStream} isListening={true} />
            ) : (
-               <div className="text-gray-600 flex flex-col items-center justify-center h-full">
+               <div className="text-gray-600 dark:text-gray-600 flex flex-col items-center justify-center h-full">
                    {stage === 'processing' ? (
                         <>
                             <div className="flex items-center gap-3 mb-4">
                                 <Wand2 className="w-8 h-8 animate-spin text-emerald-500" />
                                 <Sparkles className="w-6 h-6 animate-pulse text-purple-500" />
                             </div>
-                            <span className="text-emerald-400 font-medium animate-pulse">Formatting Markdown...</span>
+                            <span className="text-emerald-500 dark:text-emerald-400 font-medium animate-pulse">Formatting Markdown...</span>
                         </>
                    ) : (
-                       <div className="text-sm text-gray-600">Microphone inactive</div>
+                       <div className="text-sm text-gray-500 dark:text-gray-600">Microphone inactive</div>
                    )}
                </div>
            )}
@@ -284,26 +277,26 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
         <div className="p-6 space-y-4">
             <div className="space-y-2">
                 <div className="flex justify-between items-center">
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    <label className="text-xs font-semibold text-gray-500 dark:text-gray-500 uppercase tracking-wider">
                         {stage === 'processing' ? 'Generating Note' : 'Live Transcript'}
                     </label>
-                    {stage === 'processing' && <span className="text-xs text-emerald-500 animate-pulse">Streaming from AI...</span>}
+                    {stage === 'processing' && <span className="text-xs text-emerald-600 dark:text-emerald-500 animate-pulse">Streaming from AI...</span>}
                 </div>
                 
-                <div className="p-4 bg-[#1A1A1A] rounded-xl border border-[#333] min-h-[120px] max-h-[300px] overflow-y-auto transition-all custom-scrollbar">
+                <div className="p-4 bg-gray-100 dark:bg-[#1A1A1A] rounded-xl border border-gray-200 dark:border-[#333] min-h-[120px] max-h-[300px] overflow-y-auto transition-all custom-scrollbar">
                     {stage === 'processing' ? (
-                         <div className="whitespace-pre-wrap text-gray-200 font-mono text-sm">
+                         <div className="whitespace-pre-wrap text-gray-800 dark:text-gray-200 font-mono text-sm">
                             {aiResponse || 'Thinking...'}
                          </div>
                     ) : (
-                        <div className="text-gray-200 leading-relaxed text-lg font-light">
+                        <div className="text-gray-800 dark:text-gray-200 leading-relaxed text-lg font-light">
                              {finalTranscript || interimTranscript ? (
                                 <>
                                     <span>{finalTranscript}</span>
-                                    <span className="text-gray-500 ml-1">{interimTranscript}</span>
+                                    <span className="text-gray-500 dark:text-gray-500 ml-1">{interimTranscript}</span>
                                 </>
                              ) : (
-                                <span className="text-gray-600 italic">Start speaking to capture your thoughts...</span>
+                                <span className="text-gray-500 dark:text-gray-600 italic">Start speaking to capture your thoughts...</span>
                              )}
                         </div>
                     )}
@@ -311,7 +304,7 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
             </div>
 
             {errorMsg && (
-                <div className="p-3 bg-red-900/20 border border-red-500/50 text-red-300 rounded-lg flex items-start gap-2 animate-in slide-in-from-top-2">
+                <div className="p-3 bg-red-100 dark:bg-red-900/20 border border-red-200 dark:border-red-500/50 text-red-700 dark:text-red-300 rounded-lg flex items-center gap-2 animate-in slide-in-from-top-2">
                     <AlertCircle className="w-4 h-4 shrink-0" /> 
                     <span className="text-sm font-medium">{errorMsg}</span>
                 </div>
@@ -319,18 +312,18 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
         </div>
 
         {/* Footer Actions */}
-        <div className="p-6 border-t border-[#222] bg-[#161616] flex justify-between items-center">
-             <div className="text-xs text-gray-500">
+        <div className="p-6 border-t border-gray-200 dark:border-[#222] bg-gray-50 dark:bg-[#161616] flex justify-between items-center">
+             <div className="text-xs text-gray-500 dark:text-gray-500">
                 Lumen will automatically format your speech into Markdown.
              </div>
 
              <div className="flex gap-3">
                  {stage === 'error' ? (
-                     <Button onClick={handleRetry} className="bg-emerald-600 hover:bg-emerald-500 px-6">
+                     <Button onClick={handleRetry} className="bg-emerald-600 hover:bg-emerald-700 dark:hover:bg-emerald-500 px-6 text-white">
                          <RefreshCw className="w-4 h-4 mr-2" /> Retry
                      </Button>
                  ) : stage === 'recording' ? (
-                     <Button onClick={handleFinish} className="bg-red-600 hover:bg-red-500 px-8 py-3 h-auto text-base shadow-lg shadow-red-900/20">
+                     <Button onClick={handleFinish} className="bg-red-600 hover:bg-red-700 px-8 py-3 h-auto text-base shadow-lg shadow-red-900/20 text-white">
                          <Square className="w-4 h-4 mr-2" /> Stop & Format
                      </Button>
                  ) : (

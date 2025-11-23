@@ -92,12 +92,12 @@ export const SlashCommandMenu: React.FC<Props> = ({ isOpen, position, commands, 
 
   return (
     <div 
-      className="fixed z-[99999] w-[300px] bg-[#1C1C1C] border border-[#333] rounded-xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100"
+      className="fixed z-[99999] w-[300px] bg-white dark:bg-[#1C1C1C] border border-gray-200 dark:border-[#333] rounded-xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100"
       style={menuStyle}
     >
-      <div className="px-3 py-2 border-b border-[#2A2A2A] bg-[#161616] text-xs font-semibold text-gray-500 uppercase tracking-wider flex justify-between items-center">
+      <div className="px-3 py-2 border-b border-gray-200 dark:border-[#2A2A2A] bg-gray-50 dark:bg-[#161616] text-xs font-semibold text-gray-500 dark:text-gray-500 uppercase tracking-wider flex justify-between items-center">
         <span>Insert Block</span>
-        <span className="text-[10px] bg-[#222] px-1.5 rounded border border-[#333]">ESC to close</span>
+        <span className="text-[10px] bg-gray-200 dark:bg-[#222] px-1.5 rounded border border-gray-300 dark:border-[#333]">ESC to close</span>
       </div>
       <div className="overflow-y-auto flex-1 p-1 custom-scrollbar" ref={menuRef}>
         {commands.map((cmd, index) => (
@@ -106,16 +106,16 @@ export const SlashCommandMenu: React.FC<Props> = ({ isOpen, position, commands, 
             onClick={() => onSelect(cmd)}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors ${
               index === selectedIndex 
-                ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-600/20' 
-                : 'text-gray-300 hover:bg-[#2A2A2A] border border-transparent'
+                ? 'bg-emerald-50 dark:bg-emerald-600/20 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-600/20' 
+                : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#2A2A2A] border border-transparent'
             }`}
           >
-            <div className={`p-1.5 rounded-md shrink-0 ${index === selectedIndex ? 'bg-emerald-600 text-white' : 'bg-[#222] text-gray-400'}`}>
+            <div className={`p-1.5 rounded-md shrink-0 ${index === selectedIndex ? 'bg-emerald-600 text-white' : 'bg-gray-200 dark:bg-[#222] text-gray-500 dark:text-gray-400'}`}>
                 <cmd.icon className="w-4 h-4" />
             </div>
             <div className="flex-1 overflow-hidden">
               <div className="text-sm font-medium truncate">{cmd.label}</div>
-              <div className={`text-xs truncate ${index === selectedIndex ? 'text-emerald-400/70' : 'text-gray-500'}`}>
+              <div className={`text-xs truncate ${index === selectedIndex ? 'text-emerald-600/70 dark:text-emerald-400/70' : 'text-gray-500 dark:text-gray-500'}`}>
                 {cmd.description}
               </div>
             </div>

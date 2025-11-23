@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { AIProvider, useAI } from './context/AIContext';
 import { NotesProvider, useNotes } from './context/NotesContext';
+import { useTheme } from './context/ThemeContext';
 import { AISettingsModal } from './components/AISettingsModal';
 import { Button } from './components/ui/Button';
 import { LLMService } from './services/llmService';
@@ -14,7 +15,7 @@ import {
   Bold, Italic, List, PenLine, Trash2, Edit2, Image as ImageIcon, 
   Table as TableIcon, Download, Upload, File, FileCode, Printer, ChevronDown, Mic,
   Heading1, Heading2, Heading3, ListOrdered, CheckSquare, Quote, Code, Minus, Video, Type,
-  Eye, Columns
+  Eye, Columns, Moon, Sun
 } from 'lucide-react';
 
 // Helper to calculate caret coordinates in a textarea
@@ -63,6 +64,7 @@ type ViewMode = 'edit' | 'split' | 'preview';
 const EditorWorkspace = () => {
   const { setSettingsOpen, config, connectionStatus } = useAI();
   const { notes, activeNote, activeNoteId, setActiveNoteId, addNote, updateNote, deleteNote, importNote } = useNotes();
+  const { theme, toggleTheme } = useTheme();
   
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedText, setGeneratedText] = useState("");
@@ -210,9 +212,9 @@ const EditorWorkspace = () => {
 
       let block = '';
       if (videoId) {
-          block = `\n<div class="aspect-video my-6 rounded-xl overflow-hidden border border-[#333] shadow-lg"><iframe src="https://www.youtube.com/embed/${videoId}" class="w-full h-full" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>\n`;
+          block = `\n<div class="aspect-video my-6 rounded-xl overflow-hidden border border-gray-200 dark:border-[#333] shadow-lg"><iframe src="https://www.youtube.com/embed/${videoId}" class="w-full h-full" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>\n`;
       } else {
-          block = `\n<div class="aspect-video my-6 rounded-xl overflow-hidden border border-[#333] shadow-lg"><video src="${url}" controls class="w-full h-full"></video></div>\n`;
+          block = `\n<div class="aspect-video my-6 rounded-xl overflow-hidden border border-gray-200 dark:border-[#333] shadow-lg"><video src="${url}" controls class="w-full h-full"></video></div>\n`;
       }
       insertTextAtCursor(block);
   };
@@ -503,11 +505,11 @@ const EditorWorkspace = () => {
   };
 
   return (
-    <div className="flex min-h-screen bg-[#0F0F0F] text-gray-100 font-sans overflow-hidden">
+    <div className="flex min-h-screen bg-white dark:bg-[#0F0F0F] text-gray-800 dark:text-gray-100 font-sans overflow-hidden">
       
       {/* Sidebar */}
-      <div className="w-64 bg-[#111111] border-r border-[#222] flex flex-col min-w-[250px] shrink-0 print:hidden z-20">
-        <div className="p-4 border-b border-[#222]">
+      <div className="w-64 bg-gray-50 dark:bg-[#111111] border-r border-gray-200 dark:border-[#222] flex flex-col min-w-[250px] shrink-0 print:hidden z-20">
+        <div className="p-4 border-b border-gray-200 dark:border-[#222]">
           <div className="flex items-center gap-2 text-emerald-500 font-bold text-xl tracking-tight">
             <Zap className="w-5 h-5 fill-current" />
             <span>Lumen</span>
@@ -515,31 +517,31 @@ const EditorWorkspace = () => {
         </div>
         
         <div className="flex-1 p-3 space-y-1 overflow-y-auto custom-scrollbar">
-           <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Notes</div>
+           <div className="px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-500 uppercase tracking-wider">Notes</div>
            {notes.map(note => (
                <div key={note.id} className="relative group flex items-center">
                     <button 
                         onClick={() => setActiveNoteId(note.id)}
                         className={`w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors text-left ${
                             activeNoteId === note.id 
-                            ? 'bg-[#1C1C1C] text-white border border-[#333]' 
-                            : 'text-gray-400 hover:bg-[#1A1A1A] hover:text-gray-200'
+                            ? 'bg-gray-200 dark:bg-[#1C1C1C] text-gray-900 dark:text-white border border-gray-300 dark:border-[#333]' 
+                            : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#1A1A1A] hover:text-gray-700 dark:hover:text-gray-200'
                         }`}
                     >
-                        <FileText className={`w-4 h-4 shrink-0 ${activeNoteId === note.id ? 'text-emerald-500' : 'text-gray-500'}`} />
+                        <FileText className={`w-4 h-4 shrink-0 ${activeNoteId === note.id ? 'text-emerald-500' : 'text-gray-500 dark:text-gray-500'}`} />
                         <span className="truncate flex-1">{note.title || "Untitled Note"}</span>
                     </button>
                     <div className="absolute right-2 top-0 bottom-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                         <button 
                             onClick={() => handleRenameClick(note.id)}
-                            className="p-1 text-gray-400 hover:text-white hover:bg-[#2A2A2A] rounded"
+                            className="p-1 text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-200 dark:hover:bg-[#2A2A2A] rounded"
                             title="Rename note"
                         >
                             <Edit2 className="w-3.5 h-3.5" />
                         </button>
                         <button 
                             onClick={() => handleDeleteClick(note.id)}
-                            className="p-1 text-red-500/70 hover:text-red-500 hover:bg-red-500/10 rounded"
+                            className="p-1 text-red-500/70 hover:text-red-600 dark:hover:text-red-500 hover:bg-red-500/10 rounded"
                             title="Delete note"
                         >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -549,20 +551,25 @@ const EditorWorkspace = () => {
            ))}
         </div>
 
-        <div className="p-3 border-t border-[#222] mt-auto space-y-2">
+        <div className="p-3 border-t border-gray-200 dark:border-[#222] mt-auto space-y-2">
            <Button 
              onClick={addNote}
-             className="w-full bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-900/20"
+             className="w-full bg-emerald-600 hover:bg-emerald-700 dark:hover:bg-emerald-500 shadow-lg shadow-emerald-900/20"
            >
               <Plus className="w-4 h-4 mr-2" /> New Note
            </Button>
-           <Button 
-             variant="secondary"
-             onClick={() => mdFileInputRef.current?.click()}
-             className="w-full"
-           >
-              <Upload className="w-4 h-4 mr-2" /> Import .md file
-           </Button>
+           <div className="flex items-center gap-2">
+            <Button 
+                variant="secondary"
+                onClick={() => mdFileInputRef.current?.click()}
+                className="w-full"
+            >
+                <Upload className="w-4 h-4 mr-2" /> Import .md
+            </Button>
+            <Button variant="secondary" onClick={toggleTheme} className="px-2.5">
+                {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </Button>
+           </div>
         </div>
       </div>
 
@@ -570,13 +577,13 @@ const EditorWorkspace = () => {
       <div className="flex-1 flex flex-col min-w-0 relative h-screen">
         
         {/* Header */}
-        <header className="h-14 border-b border-[#222] bg-[#111111] flex items-center justify-between px-6 shrink-0 print:hidden z-20">
-           <div className="flex items-center gap-2 text-sm text-gray-400 w-full mr-4">
+        <header className="h-14 border-b border-gray-200 dark:border-[#222] bg-gray-50 dark:bg-[#111111] flex items-center justify-between px-6 shrink-0 print:hidden z-20">
+           <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 w-full mr-4">
               <span className="hidden sm:inline shrink-0">My Workspace</span>
               <ChevronRight className="w-4 h-4 hidden sm:inline shrink-0" />
               <input 
                 ref={headerTitleRef}
-                className="bg-transparent text-white font-medium focus:outline-none focus:border-b border-gray-600 min-w-[100px] w-full max-w-md truncate"
+                className="bg-transparent text-gray-900 dark:text-white font-medium focus:outline-none focus:border-b border-gray-400 dark:border-gray-600 min-w-[100px] w-full max-w-md truncate"
                 value={activeNote?.title || ""}
                 onChange={(e) => activeNote && updateNote(activeNote.id, { title: e.target.value })}
                 placeholder="Untitled Note"
@@ -586,60 +593,60 @@ const EditorWorkspace = () => {
            <div className="flex items-center gap-3 shrink-0">
               
               {/* View Mode Toggle */}
-              <div className="flex bg-[#1A1A1A] rounded-lg p-1 border border-[#333]">
+              <div className="flex bg-gray-200 dark:bg-[#1A1A1A] rounded-lg p-1 border border-gray-300 dark:border-[#333]">
                 <button 
                     onClick={() => setViewMode('edit')} 
                     title="Editor Only"
-                    className={`p-1.5 rounded transition-all ${viewMode === 'edit' ? 'bg-[#333] text-emerald-400 shadow-sm' : 'text-gray-400 hover:text-gray-200'}`}
+                    className={`p-1.5 rounded transition-all ${viewMode === 'edit' ? 'bg-white dark:bg-[#333] text-emerald-500 dark:text-emerald-400 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
                 >
                     <FileText className="w-4 h-4" />
                 </button>
                 <button 
                     onClick={() => setViewMode('split')} 
                     title="Split View"
-                    className={`p-1.5 rounded transition-all ${viewMode === 'split' ? 'bg-[#333] text-emerald-400 shadow-sm' : 'text-gray-400 hover:text-gray-200'}`}
+                    className={`p-1.5 rounded transition-all ${viewMode === 'split' ? 'bg-white dark:bg-[#333] text-emerald-500 dark:text-emerald-400 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
                 >
                     <Columns className="w-4 h-4" />
                 </button>
                 <button 
                     onClick={() => setViewMode('preview')} 
                     title="Preview Only"
-                    className={`p-1.5 rounded transition-all ${viewMode === 'preview' ? 'bg-[#333] text-emerald-400 shadow-sm' : 'text-gray-400 hover:text-gray-200'}`}
+                    className={`p-1.5 rounded transition-all ${viewMode === 'preview' ? 'bg-white dark:bg-[#333] text-emerald-500 dark:text-emerald-400 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
                 >
                     <Eye className="w-4 h-4" />
                 </button>
               </div>
 
-              <div className="h-4 w-px bg-[#333] mx-1" />
+              <div className="h-4 w-px bg-gray-300 dark:bg-[#333] mx-1" />
 
               <div className="relative">
                 <Button 
                     variant="ghost" 
                     size="sm" 
                     onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
-                    className="text-gray-400 hover:text-white flex items-center gap-1"
+                    className="text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white flex items-center gap-1"
                 >
                     <Download className="w-4 h-4" />
                     <ChevronDown className="w-3 h-3" />
                 </Button>
                 {isExportMenuOpen && (
-                     <div className="absolute right-0 top-full mt-2 w-48 bg-[#222] border border-[#333] rounded-lg shadow-xl z-30 py-1">
-                        <button onClick={() => handleExport('md')} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-300 hover:bg-[#333] hover:text-white">
+                     <div className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-[#222] border border-gray-200 dark:border-[#333] rounded-lg shadow-xl z-30 py-1">
+                        <button onClick={() => handleExport('md')} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#333] hover:text-black dark:hover:text-white">
                             <FileCode className="w-4 h-4" /> Markdown (.md)
                         </button>
-                        <button onClick={() => handleExport('txt')} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-300 hover:bg-[#333] hover:text-white">
+                        <button onClick={() => handleExport('txt')} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#333] hover:text-black dark:hover:text-white">
                             <File className="w-4 h-4" /> Plain Text (.txt)
                         </button>
-                        <button onClick={() => handleExport('pdf')} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-300 hover:bg-[#333] hover:text-white">
+                        <button onClick={() => handleExport('pdf')} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#333] hover:text-black dark:hover:text-white">
                             <Printer className="w-4 h-4" /> PDF (Print)
                         </button>
                      </div>
                 )}
               </div>
 
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-[#1A1A1A] rounded-full border border-[#333]">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 dark:bg-[#1A1A1A] rounded-full border border-gray-200 dark:border-[#333]">
                 <div className={`w-2 h-2 rounded-full transition-colors duration-300 ${getStatusColor()}`} title={connectionStatus} />
-                <span className="text-xs text-gray-300 font-medium uppercase tracking-wider">{config.provider}</span>
+                <span className="text-xs text-gray-600 dark:text-gray-300 font-medium uppercase tracking-wider">{config.provider}</span>
               </div>
               <Button variant="ghost" size="sm" onClick={() => setSettingsOpen(true)}>
                  <Settings className="w-4 h-4" />
@@ -650,9 +657,9 @@ const EditorWorkspace = () => {
                     <MoreHorizontal className="w-4 h-4" />
                 </Button>
                 {isMenuOpen && (
-                    <div className="absolute right-0 top-full mt-2 w-48 bg-[#222] border border-[#333] rounded-lg shadow-xl z-30 py-1">
+                    <div className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-[#222] border border-gray-200 dark:border-[#333] rounded-lg shadow-xl z-30 py-1">
                         <button 
-                            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-300 hover:bg-[#333] hover:text-white"
+                            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#333] hover:text-black dark:hover:text-white"
                             onClick={() => {
                                 headerTitleRef.current?.focus();
                                 headerTitleRef.current?.select();
@@ -662,7 +669,7 @@ const EditorWorkspace = () => {
                             <Edit2 className="w-4 h-4" /> Rename Note
                         </button>
                         <button 
-                            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-[#333] border-t border-[#333]"
+                            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-500 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-[#333] border-t border-gray-200 dark:border-[#333]"
                             onClick={() => {
                                 if (activeNote) handleDeleteClick(activeNote.id);
                                 setIsMenuOpen(false);
@@ -677,28 +684,28 @@ const EditorWorkspace = () => {
         </header>
 
         {/* Toolbar */}
-        <div className="h-12 border-b border-[#222] bg-[#161616] flex items-center px-6 gap-2 overflow-x-auto no-scrollbar shrink-0 print:hidden z-10">
-            <div className="flex items-center gap-1 pr-4 border-r border-[#333]">
-                <button onClick={() => insertTextAtCursor('**bold text**')} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded" title="Bold"><Bold className="w-4 h-4" /></button>
-                <button onClick={() => insertTextAtCursor('*italic text*')} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded" title="Italic"><Italic className="w-4 h-4" /></button>
-                <button onClick={() => insertTextAtCursor('- ')} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded" title="Bullet List"><List className="w-4 h-4" /></button>
-                <button onClick={() => imageFileInputRef.current?.click()} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded" title="Insert Image"><ImageIcon className="w-4 h-4" /></button>
-                <button onClick={() => insertTextAtCursor('## ')} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded" title="Heading">H2</button>
+        <div className="h-12 border-b border-gray-200 dark:border-[#222] bg-gray-100 dark:bg-[#161616] flex items-center px-6 gap-2 overflow-x-auto no-scrollbar shrink-0 print:hidden z-10">
+            <div className="flex items-center gap-1 pr-4 border-r border-gray-300 dark:border-[#333]">
+                <button onClick={() => insertTextAtCursor('**bold text**')} className="p-2 text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-200 dark:hover:bg-[#222] rounded" title="Bold"><Bold className="w-4 h-4" /></button>
+                <button onClick={() => insertTextAtCursor('*italic text*')} className="p-2 text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-200 dark:hover:bg-[#222] rounded" title="Italic"><Italic className="w-4 h-4" /></button>
+                <button onClick={() => insertTextAtCursor('- ')} className="p-2 text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-200 dark:hover:bg-[#222] rounded" title="Bullet List"><List className="w-4 h-4" /></button>
+                <button onClick={() => imageFileInputRef.current?.click()} className="p-2 text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-200 dark:hover:bg-[#222] rounded" title="Insert Image"><ImageIcon className="w-4 h-4" /></button>
+                <button onClick={() => insertTextAtCursor('## ')} className="p-2 text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-200 dark:hover:bg-[#222] rounded" title="Heading">H2</button>
             </div>
             
             <div className="flex items-center gap-2 pl-2 whitespace-nowrap flex-1">
-                <span className="text-xs font-medium text-emerald-500 uppercase tracking-wider ml-2 mr-1">AI Tools</span>
+                <span className="text-xs font-medium text-emerald-600 dark:text-emerald-500 uppercase tracking-wider ml-2 mr-1">AI Tools</span>
                 <Button size="sm" variant="secondary" onClick={() => handleAIAction("Summarize this note")}>
-                    <Sparkles className="w-3 h-3 mr-2 text-emerald-400" /> Summarize
+                    <Sparkles className="w-3 h-3 mr-2 text-emerald-500 dark:text-emerald-400" /> Summarize
                 </Button>
                 <Button size="sm" variant="secondary" onClick={() => handleAIAction("Fix grammar and improve tone")}>
-                    <PenLine className="w-3 h-3 mr-2 text-blue-400" /> Improve
+                    <PenLine className="w-3 h-3 mr-2 text-blue-500 dark:text-blue-400" /> Improve
                 </Button>
             </div>
 
             <Button 
                 onClick={() => setIsVoiceModeOpen(true)} 
-                className="bg-emerald-600/20 text-emerald-400 border border-emerald-600/50 hover:bg-emerald-600/30"
+                className="bg-emerald-100 text-emerald-700 border border-emerald-200 hover:bg-emerald-200 dark:bg-emerald-600/20 dark:text-emerald-400 dark:border-emerald-600/50 dark:hover:bg-emerald-600/30"
                 size="sm"
             >
                 <Mic className="w-4 h-4 mr-2" /> Voice Mode
@@ -715,11 +722,11 @@ const EditorWorkspace = () => {
                        width: viewMode === 'split' ? `${splitPos}%` : viewMode === 'edit' ? '100%' : '0%',
                        display: viewMode === 'preview' ? 'none' : 'flex'
                    }}
-                   className="flex flex-col border-r border-[#222] bg-[#111] transition-none"
+                   className="flex flex-col border-r border-gray-200 dark:border-[#222] bg-white dark:bg-[#111] transition-none"
                >
                  <textarea 
                     ref={textareaRef}
-                    className="flex-1 w-full bg-transparent text-gray-300 font-mono text-sm p-6 resize-none focus:outline-none custom-scrollbar leading-relaxed break-words whitespace-pre-wrap"
+                    className="flex-1 w-full bg-transparent text-gray-700 dark:text-gray-300 font-mono text-sm p-6 resize-none focus:outline-none custom-scrollbar leading-relaxed break-words whitespace-pre-wrap"
                     placeholder="# Start typing your note here... (Type / for commands)"
                     value={localContent}
                     onChange={(e) => handleContentChange(e.target.value)}
@@ -735,7 +742,7 @@ const EditorWorkspace = () => {
                     className="w-2 -ml-1 h-full cursor-col-resize z-50 flex items-center justify-center group hover:bg-emerald-500/10 transition-colors"
                     onMouseDown={startResizing}
                   >
-                    <div className="w-0.5 h-8 bg-[#333] group-hover:bg-emerald-500 rounded-full transition-colors" />
+                    <div className="w-0.5 h-8 bg-gray-300 dark:bg-[#333] group-hover:bg-emerald-500 rounded-full transition-colors" />
                   </div>
                )}
 
@@ -746,21 +753,16 @@ const EditorWorkspace = () => {
                        display: viewMode === 'edit' ? 'none' : 'block',
                        pointerEvents: isDragging ? 'none' : 'auto' // Prevent iframe interference while dragging
                    }}
-                   className="h-full bg-[#0F0F0F] overflow-y-auto custom-scrollbar bg-dotted-pattern"
+                   className={`h-full overflow-y-auto custom-scrollbar ${theme === 'light' ? 'bg-dotted-pattern-light' : 'bg-dotted-pattern-dark'}`}
                >
                     <div 
-                        className="prose prose-invert max-w-none p-8
-                        prose-headings:font-bold prose-headings:text-emerald-500 
-                        prose-p:text-gray-300 prose-p:leading-relaxed
-                        prose-a:text-blue-400 prose-img:rounded-xl prose-img:shadow-lg
-                        prose-blockquote:border-l-emerald-500 prose-blockquote:bg-[#1A1A1A]
-                        prose-code:text-emerald-300 prose-code:bg-[#222] prose-code:rounded prose-code:px-1"
+                        className={`prose ${theme === 'dark' ? 'dark:prose-invert' : ''} max-w-none p-8`}
                         dangerouslySetInnerHTML={{ __html: parseMarkdown(activeNote.content) }}
                     />
                </div>
              </>
            ) : (
-               <div className="w-full h-full flex items-center justify-center text-gray-500">
+               <div className="w-full h-full flex items-center justify-center text-gray-400 dark:text-gray-500">
                    Select a note or create a new one
                </div>
            )}
@@ -784,18 +786,18 @@ const EditorWorkspace = () => {
            {/* AI Output Overlay */}
            { (isGenerating || generatedText) && (
               <div className="absolute bottom-6 right-6 w-96 z-50 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                 <div className="p-1 rounded-xl bg-gradient-to-r from-emerald-500/20 to-blue-500/20 backdrop-blur-md border border-[#333] shadow-2xl">
-                    <div className="bg-[#161616] rounded-lg p-4">
-                        <div className="flex items-center gap-2 mb-3 text-emerald-400 text-xs font-bold uppercase tracking-wider">
+                 <div className="p-1 rounded-xl bg-gradient-to-r from-emerald-500/20 to-blue-500/20 backdrop-blur-md border border-gray-200 dark:border-[#333] shadow-2xl">
+                    <div className="bg-white/80 dark:bg-[#161616] rounded-lg p-4">
+                        <div className="flex items-center gap-2 mb-3 text-emerald-600 dark:text-emerald-400 text-xs font-bold uppercase tracking-wider">
                             <Sparkles className="w-3 h-3" /> AI Analysis
                         </div>
-                        <div className="max-h-60 overflow-y-auto text-sm text-gray-200 leading-relaxed whitespace-pre-wrap mb-3 custom-scrollbar">
+                        <div className="max-h-60 overflow-y-auto text-sm text-gray-800 dark:text-gray-200 leading-relaxed whitespace-pre-wrap mb-3 custom-scrollbar">
                             {generatedText}
                             {isGenerating && <span className="inline-block w-1 h-3 bg-emerald-500 ml-1 animate-pulse"/>}
                         </div>
-                        <div className="flex gap-2 justify-end pt-2 border-t border-[#333]">
+                        <div className="flex gap-2 justify-end pt-2 border-t border-gray-200 dark:border-[#333]">
                             <Button size="sm" variant="ghost" onClick={() => setGeneratedText("")} disabled={isGenerating} className="h-7 text-xs">Discard</Button>
-                            <Button size="sm" className="bg-emerald-600 hover:bg-emerald-500 h-7 text-xs" onClick={handleAIInsert} disabled={isGenerating}>Insert</Button>
+                            <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 dark:hover:bg-emerald-500 h-7 text-xs" onClick={handleAIInsert} disabled={isGenerating}>Insert</Button>
                         </div>
                     </div>
                  </div>

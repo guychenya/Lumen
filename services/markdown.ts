@@ -111,10 +111,7 @@ export const parseMarkdown = (text: string): string => {
   const processedLines = lines.map(line => {
       const trimmed = line.trim();
       if (!trimmed) return '';
-      // If a line looks like an HTML tag (opening or closing), don't wrap it in <p>
-      if (trimmed.match(/^<(\/)?(div|ul|li|h[1-6]|p|blockquote|pre|table|hr|details|summary)/i)) {
-          return trimmed;
-      }
+      if (trimmed.match(/^<(div|ul|li|h|p|blockquote|pre|table|hr|details|summary)/i)) return trimmed; 
       return `<p class="mb-4">${trimmed}</p>`;
   });
   

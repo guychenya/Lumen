@@ -109,7 +109,7 @@ export const AudioVisualizer: React.FC<Props> = ({ stream, isListening }) => {
       ref={canvasRef} 
       width={600} 
       height={200} 
-      className="w-full h-48 rounded-xl bg-[#0a0a0a]"
+      className="w-full h-48 rounded-xl bg-gray-100 dark:bg-[#0a0a0a]"
     />
   );
 };
