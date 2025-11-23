@@ -1,11 +1,10 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { AIProvider, useAI } from './context/AIContext';
 import { NotesProvider, useNotes } from './context/NotesContext';
 import { AISettingsModal } from './components/AISettingsModal';
 import { Button } from './components/ui/Button';
 import { LLMService } from './services/llmService';
-import { htmlToMarkdown } from './services/converter';
+import { htmlToMarkdown, htmlToText } from './services/converter';
 import { FloatingToolbar } from './components/FloatingToolbar';
 import { SlashCommandMenu, SlashCommand } from './components/SlashCommandMenu';
 import { RichEditor } from './components/RichEditor';
@@ -13,7 +12,7 @@ import { ChatMessage } from './types';
 import { 
   Settings, Sparkles, Plus, FileText, ChevronRight, MoreHorizontal, Zap,
   Bold, Italic, List, PenLine, Trash2, Edit2, Image as ImageIcon, 
-  Table as TableIcon, Download, Upload
+  Table as TableIcon, Download, Upload, File, FileCode, Printer, ChevronDown
 } from 'lucide-react';
 
 const EditorWorkspace = () => {
@@ -23,6 +22,7 @@ const EditorWorkspace = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedText, setGeneratedText] = useState("");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
 
   // Slash Command State
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
@@ -55,8 +55,6 @@ const EditorWorkspace = () => {
 
   const executeSlashCommand = (command: SlashCommand) => {
     // Remove the slash that triggered the menu (heuristic: delete last character)
-    // In contentEditable this is tricky, for now we just execute the command which inserts at caret
-    // Ideally we find the slash node and remove it. 
     document.execCommand('delete'); // Remove the slash
     command.action();
     setSlashMenuOpen(false);
@@ -124,14 +122,34 @@ const EditorWorkspace = () => {
       }
   };
 
-  const exportMarkdown = () => {
+  const handleExport = (type: 'md' | 'txt' | 'pdf') => {
       if (!activeNote) return;
-      const md = htmlToMarkdown(activeNote.content);
-      const blob = new Blob([md], { type: 'text/markdown' });
+      setIsExportMenuOpen(false);
+
+      if (type === 'pdf') {
+          window.print();
+          return;
+      }
+
+      let content = '';
+      let mime = 'text/plain';
+      let ext = 'txt';
+
+      if (type === 'md') {
+          content = htmlToMarkdown(activeNote.content);
+          mime = 'text/markdown';
+          ext = 'md';
+      } else {
+          content = htmlToText(activeNote.content);
+          mime = 'text/plain';
+          ext = 'txt';
+      }
+
+      const blob = new Blob([content], { type: mime });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${activeNote.title || 'untitled'}.md`;
+      a.download = `${activeNote.title || 'untitled'}.${ext}`;
       a.click();
   };
 
@@ -147,8 +165,8 @@ const EditorWorkspace = () => {
   return (
     <div className="flex min-h-screen bg-[#0F0F0F] text-gray-100 font-sans">
       
-      {/* Sidebar - Sticky and Fixed Height */}
-      <div className="w-64 bg-[#111111] border-r border-[#222] flex flex-col min-w-[250px] z-30 sticky top-0 h-screen">
+      {/* Sidebar - Sticky and Fixed Height - HIDDEN ON PRINT */}
+      <div className="w-64 bg-[#111111] border-r border-[#222] flex flex-col min-w-[250px] z-30 sticky top-0 h-screen print:hidden">
         <div className="p-4 border-b border-[#222]">
           <div className="flex items-center gap-2 text-emerald-500 font-bold text-xl tracking-tight">
             <Zap className="w-5 h-5 fill-current" />
@@ -187,8 +205,8 @@ const EditorWorkspace = () => {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0 relative">
         
-        {/* Header */}
-        <header className="h-14 border-b border-[#222] bg-[#111111] flex items-center justify-between px-6 z-20">
+        {/* Header - HIDDEN ON PRINT */}
+        <header className="h-14 border-b border-[#222] bg-[#111111] flex items-center justify-between px-6 z-20 print:hidden">
            <div className="flex items-center gap-2 text-sm text-gray-400 w-full mr-4">
               <span className="hidden sm:inline shrink-0">My Workspace</span>
               <ChevronRight className="w-4 h-4 hidden sm:inline shrink-0" />
@@ -202,15 +220,32 @@ const EditorWorkspace = () => {
            </div>
 
            <div className="flex items-center gap-3 shrink-0">
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={exportMarkdown}
-                className="text-gray-400 hover:text-white"
-                title="Export to Markdown"
-              >
-                 <Download className="w-4 h-4" />
-              </Button>
+              
+              <div className="relative">
+                <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
+                    className="text-gray-400 hover:text-white flex items-center gap-1"
+                >
+                    <Download className="w-4 h-4" />
+                    <ChevronDown className="w-3 h-3" />
+                </Button>
+                {isExportMenuOpen && (
+                     <div className="absolute right-0 top-full mt-2 w-48 bg-[#222] border border-[#333] rounded-lg shadow-xl z-20 py-1">
+                        <div className="px-3 py-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-[#333]">Export As</div>
+                        <button onClick={() => handleExport('md')} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-300 hover:bg-[#333] hover:text-white">
+                            <FileCode className="w-4 h-4" /> Markdown (.md)
+                        </button>
+                        <button onClick={() => handleExport('txt')} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-300 hover:bg-[#333] hover:text-white">
+                            <File className="w-4 h-4" /> Plain Text (.txt)
+                        </button>
+                        <button onClick={() => handleExport('pdf')} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-300 hover:bg-[#333] hover:text-white">
+                            <Printer className="w-4 h-4" /> PDF (Print)
+                        </button>
+                     </div>
+                )}
+              </div>
 
               <div className="h-4 w-px bg-[#333] mx-1" />
 
@@ -252,8 +287,8 @@ const EditorWorkspace = () => {
            </div>
         </header>
 
-        {/* Toolbar */}
-        <div className="h-12 border-b border-[#222] bg-[#161616] flex items-center px-6 gap-2 overflow-x-auto no-scrollbar z-20 sticky top-0">
+        {/* Toolbar - HIDDEN ON PRINT */}
+        <div className="h-12 border-b border-[#222] bg-[#161616] flex items-center px-6 gap-2 overflow-x-auto no-scrollbar z-20 sticky top-0 print:hidden">
             <div className="flex items-center gap-1 pr-4 border-r border-[#333]">
                 <button onClick={() => execFormat('bold')} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded" title="Bold"><Bold className="w-4 h-4" /></button>
                 <button onClick={() => execFormat('italic')} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded" title="Italic"><Italic className="w-4 h-4" /></button>
@@ -274,11 +309,11 @@ const EditorWorkspace = () => {
         </div>
 
         {/* Editor Canvas */}
-        <div className="flex-1 bg-[#0F0F0F] relative cursor-text" onClick={() => editorRef.current?.focus()}>
+        <div className="flex-1 bg-[#0F0F0F] relative cursor-text print:bg-white" onClick={() => editorRef.current?.focus()}>
            {activeNote ? (
-               <div className="max-w-4xl mx-auto py-12 px-8 min-h-[calc(100vh-7rem)]">
+               <div className="max-w-4xl mx-auto py-12 px-8 min-h-[calc(100vh-7rem)] print:p-0 print:min-h-0">
                   <input 
-                    className="w-full bg-transparent text-4xl font-bold text-white placeholder-gray-600 border-none focus:outline-none focus:ring-0 mb-6"
+                    className="w-full bg-transparent text-4xl font-bold text-white placeholder-gray-600 border-none focus:outline-none focus:ring-0 mb-6 print:text-black"
                     placeholder="Untitled Note"
                     value={activeNote.title}
                     onChange={(e) => updateNote(activeNote.id, { title: e.target.value })}
@@ -290,6 +325,7 @@ const EditorWorkspace = () => {
                     onChange={(html) => updateNote(activeNote.id, { content: html })}
                     onKeyDown={handleKeyDown}
                     onSelect={() => { /* Trigger toolbar check */ }}
+                    className="print:text-black print:prose-p:text-black print:prose-headings:text-black"
                   />
 
                   {/* Hidden File Input for Images */}
@@ -301,16 +337,18 @@ const EditorWorkspace = () => {
                     onChange={handleImageUpload}
                   />
                         
-                  {/* Floating Toolbar on Selection */}
-                  <FloatingToolbar 
-                    editorRef={editorRef} 
-                    onFormat={execFormat} 
-                    onAI={handleAIAction}
-                  />
+                  {/* Floating Toolbar - HIDDEN ON PRINT */}
+                  <div className="print:hidden">
+                    <FloatingToolbar 
+                        editorRef={editorRef} 
+                        onFormat={execFormat} 
+                        onAI={handleAIAction}
+                    />
+                  </div>
 
-                  {/* AI Output Area */}
+                  {/* AI Output Area - HIDDEN ON PRINT */}
                   { (isGenerating || generatedText) && (
-                      <div className="mt-8 border-t border-[#333] pt-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                      <div className="mt-8 border-t border-[#333] pt-6 animate-in fade-in slide-in-from-bottom-4 duration-500 print:hidden">
                          <div className="flex items-center gap-2 mb-3 text-emerald-400 text-sm font-bold uppercase tracking-wider">
                             <Sparkles className="w-4 h-4" />
                             AI Analysis
@@ -326,26 +364,31 @@ const EditorWorkspace = () => {
                       </div>
                   )}
                   
-                  <div className="h-20" />
+                  <div className="h-20 print:hidden" />
                </div>
            ) : (
-               <div className="flex items-center justify-center h-full text-gray-500">
+               <div className="flex items-center justify-center h-full text-gray-500 print:hidden">
                    Select a note or create a new one
                </div>
            )}
         </div>
       </div>
 
-      <AISettingsModal />
-      <SlashCommandMenu 
-        isOpen={slashMenuOpen} 
-        position={slashMenuPos} 
-        onSelect={executeSlashCommand}
-        onClose={() => setSlashMenuOpen(false)}
-      />
+      <div className="print:hidden">
+        <AISettingsModal />
+        <SlashCommandMenu 
+            isOpen={slashMenuOpen} 
+            position={slashMenuPos} 
+            onSelect={executeSlashCommand}
+            onClose={() => setSlashMenuOpen(false)}
+        />
+      </div>
       
       {isMenuOpen && (
-          <div className="fixed inset-0 z-10 bg-transparent" onClick={() => setIsMenuOpen(false)} />
+          <div className="fixed inset-0 z-10 bg-transparent print:hidden" onClick={() => setIsMenuOpen(false)} />
+      )}
+      {isExportMenuOpen && (
+          <div className="fixed inset-0 z-10 bg-transparent print:hidden" onClick={() => setIsExportMenuOpen(false)} />
       )}
     </div>
   );

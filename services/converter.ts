@@ -1,4 +1,3 @@
-
 import { parseMarkdown } from './markdown';
 
 // Helper to convert HTML back to Markdown for export/storage
@@ -106,4 +105,25 @@ export const htmlToMarkdown = (html: string): string => {
 
 export const markdownToHtml = (md: string): string => {
     return parseMarkdown(md);
+};
+
+export const htmlToText = (html: string): string => {
+    const temp = document.createElement('div');
+    temp.innerHTML = html;
+    // Helper to replace <br> and blocks with newlines before extracting text
+    const replaceWithNewline = (tagName: string) => {
+        const els = temp.getElementsByTagName(tagName);
+        for (let i = els.length - 1; i >= 0; i--) {
+            const el = els[i];
+            el.parentNode?.insertBefore(document.createTextNode('\n'), el);
+            el.parentNode?.insertBefore(document.createTextNode('\n'), el.nextSibling);
+        }
+    };
+    
+    replaceWithNewline('p');
+    replaceWithNewline('div');
+    replaceWithNewline('br');
+    replaceWithNewline('li');
+    
+    return (temp.textContent || temp.innerText || '').replace(/\n\s*\n/g, '\n\n').trim();
 };
