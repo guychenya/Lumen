@@ -147,8 +147,8 @@ const EditorWorkspace = () => {
   return (
     <div className="flex min-h-screen bg-[#0F0F0F] text-gray-100 font-sans">
       
-      {/* Sidebar */}
-      <div className="w-64 bg-[#111111] border-r border-[#222] flex flex-col min-w-[250px] z-30 min-h-screen">
+      {/* Sidebar - Sticky and Fixed Height */}
+      <div className="w-64 bg-[#111111] border-r border-[#222] flex flex-col min-w-[250px] z-30 sticky top-0 h-screen">
         <div className="p-4 border-b border-[#222]">
           <div className="flex items-center gap-2 text-emerald-500 font-bold text-xl tracking-tight">
             <Zap className="w-5 h-5 fill-current" />
@@ -156,7 +156,7 @@ const EditorWorkspace = () => {
           </div>
         </div>
         
-        <div className="flex-1 p-3 space-y-1">
+        <div className="flex-1 p-3 space-y-1 overflow-y-auto custom-scrollbar">
            <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Notes</div>
            {notes.map(note => (
                <button 
@@ -174,7 +174,7 @@ const EditorWorkspace = () => {
            ))}
         </div>
 
-        <div className="p-3 border-t border-[#222]">
+        <div className="p-3 border-t border-[#222] mt-auto">
            <button 
              onClick={addNote}
              className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded-lg text-sm font-medium transition-all shadow-lg shadow-emerald-900/20"
@@ -188,7 +188,7 @@ const EditorWorkspace = () => {
       <div className="flex-1 flex flex-col min-w-0 relative">
         
         {/* Header */}
-        <header className="h-14 border-b border-[#222] bg-[#111111] flex items-center justify-between px-6 z-20 sticky top-0">
+        <header className="h-14 border-b border-[#222] bg-[#111111] flex items-center justify-between px-6 z-20">
            <div className="flex items-center gap-2 text-sm text-gray-400 w-full mr-4">
               <span className="hidden sm:inline shrink-0">My Workspace</span>
               <ChevronRight className="w-4 h-4 hidden sm:inline shrink-0" />
@@ -253,7 +253,7 @@ const EditorWorkspace = () => {
         </header>
 
         {/* Toolbar */}
-        <div className="h-12 border-b border-[#222] bg-[#161616] flex items-center px-6 gap-2 overflow-x-auto no-scrollbar z-20 sticky top-14">
+        <div className="h-12 border-b border-[#222] bg-[#161616] flex items-center px-6 gap-2 overflow-x-auto no-scrollbar z-20 sticky top-0">
             <div className="flex items-center gap-1 pr-4 border-r border-[#333]">
                 <button onClick={() => execFormat('bold')} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded" title="Bold"><Bold className="w-4 h-4" /></button>
                 <button onClick={() => execFormat('italic')} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded" title="Italic"><Italic className="w-4 h-4" /></button>
