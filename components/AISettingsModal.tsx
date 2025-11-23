@@ -25,7 +25,7 @@ const KNOWN_MODELS: Record<string, string[]> = {
   openai: ['gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo', 'gpt-4'],
   anthropic: ['claude-3-5-sonnet-latest', 'claude-3-opus-latest', 'claude-3-haiku-20240307'],
   gemini: ['gemini-2.5-flash', 'gemini-3-pro-preview'],
-  groq: ['llama3-70b-8192', 'mixtral-8x7b-32768', 'gemma2-9b-it'],
+  groq: ['llama-3.1-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'],
   custom: [],
   ollama: [] 
 };
