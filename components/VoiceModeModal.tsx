@@ -40,6 +40,7 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
     shouldBeRecording.current = false;
     if (recognitionRef.current) {
         try {
+            recognitionRef.current.onend = null; // Prevent restart loops during cleanup
             recognitionRef.current.stop();
         } catch (e) { /* ignore */ }
         recognitionRef.current = null;
@@ -69,74 +70,76 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
     }
 
     const recognition = new SpeechRecognition();
-    recognition.continuous = true;
+    // CRITICAL FIX: Set continuous to false. 
+    // Many non-Chrome browsers fail with Network Error if continuous is true due to socket timeouts.
+    // We will manually restart it in onend to simulate continuous recording.
+    recognition.continuous = false; 
     recognition.interimResults = true;
     recognition.lang = 'en-US';
     return recognition;
   };
 
   const startRecording = async () => {
-    // 1. Check Internet (Required for Web Speech API)
-    if (!navigator.onLine) {
-        setStage('error');
-        setErrorMsg("Voice Mode requires an active internet connection.");
-        return;
-    }
-
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      setMediaStream(stream);
+      // 1. Get Mic Stream (for Visualizer)
+      let stream = mediaStream;
+      if (!stream) {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          setMediaStream(stream);
+      }
       
       const recognition = initSpeech();
       if (!recognition) {
-          stream.getTracks().forEach(t => t.stop()); // cleanup if no recognition
+          stream?.getTracks().forEach(t => t.stop());
           return;
       }
 
       recognition.onresult = (event: any) => {
-        let final = '';
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            final += event.results[i][0].transcript;
-          }
-        }
-        if (final) {
-            setTranscript(prev => prev + ' ' + final);
+        if (!shouldBeRecording.current) return;
+
+        // With continuous=false, we get one result set per "session"
+        // We handle the concatenation in state updates or by appending final results
+        const result = event.results[event.resultIndex];
+        const transcriptText = result[0].transcript;
+        
+        if (result.isFinal) {
+             setTranscript(prev => {
+                 // Avoid duplicate appending if the logic fires multiple times
+                 if (prev.trim().endsWith(transcriptText.trim())) return prev;
+                 return prev + ' ' + transcriptText;
+             });
         }
       };
 
       recognition.onerror = (event: any) => {
-        console.warn("Speech recognition error:", event.error);
-        if (event.error === 'no-speech') return; // Ignore transient silence
+        if (event.error === 'no-speech') {
+            // Ignore no-speech, it just means the burst finished without audio
+            return;
+        }
         
-        // Handle specific errors
-        if (event.error === 'network') {
+        console.warn("Speech recognition error:", event.error);
+        
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
              cleanupResources();
-             setMediaStream(null);
              setStage('error');
-             // Detailed explanation for the "Browser compatibility" issue
-             setErrorMsg("Network/API Error: This browser (e.g., Brave, Opera) likely blocks access to Google's Speech API. Please use Google Chrome for this feature.");
-        } else if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-             cleanupResources();
-             setMediaStream(null);
-             setStage('error');
-             setErrorMsg("Microphone access denied. Please allow permissions in your browser URL bar.");
-        } else if (event.error === 'aborted') {
-             // Ignore aborted, usually manual stop
+             setErrorMsg("Microphone access denied.");
+        } else if (event.error === 'network') {
+             // In "burst" mode, network errors are rare, but if they happen, we try to ignore/restart 
+             // unless it persists. For now, we log it.
+             console.log("Transient network error in speech, ignoring...");
         } else {
-             // Generic fallback
-             // Don't kill session on minor errors, but log them
-             console.log("Minor speech error:", event.error);
+             // Aborted or other
         }
       };
 
       recognition.onend = () => {
-        // Keep-alive logic: If we should still be recording but recognition stopped (browser quirk), restart it.
+        // RESTART LOGIC: "Manual Continuous"
+        // If we are still supposed to be recording, start the engine again immediately.
         if (shouldBeRecording.current && stage !== 'error') {
             try {
                 recognition.start();
             } catch (e) {
-                // Ignore errors if already started
+                // Ignore if already started
             }
         }
       };
@@ -144,6 +147,7 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
       recognition.start();
       recognitionRef.current = recognition;
       setStage('recording');
+
     } catch (err) {
       console.error("Microphone access error:", err);
       setStage('error');
@@ -152,17 +156,24 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
   };
 
   const handleFinish = () => {
-    // Explicitly set flag to false so onend doesn't restart it
     shouldBeRecording.current = false;
-    cleanupResources();
-    setMediaStream(null);
-    setStage('idle');
-    
-    if (!transcript.trim()) {
-        onClose(); // No text recorded
-        return;
+    if (recognitionRef.current) {
+        recognitionRef.current.onend = null; // Stop the restart loop
+        recognitionRef.current.stop();
     }
-    processWithAI();
+    
+    // Wait small tick to ensure final event processed
+    setTimeout(() => {
+        cleanupResources();
+        setMediaStream(null);
+        setStage('idle');
+        
+        if (!transcript.trim()) {
+            onClose(); 
+            return;
+        }
+        processWithAI();
+    }, 200);
   };
 
   const handleRetry = () => {
@@ -170,7 +181,6 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
     setErrorMsg('');
     setStage('idle');
     shouldBeRecording.current = true;
-    // Small delay to allow cleanup to complete
     setTimeout(() => {
         startRecording();
     }, 100);
@@ -180,7 +190,6 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
     setStage('processing');
     const service = new LLMService(config);
     
-    // Automatic prompt for cohesive summarization
     const prompt = `
       I have recorded the following raw thoughts/notes:
       "${transcript}"
