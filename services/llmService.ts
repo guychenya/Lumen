@@ -1,5 +1,8 @@
 
+
 import { AIConfig, ChatMessage } from '../types';
+// FIX: Import GoogleGenAI to use the official Gemini API SDK.
+import { GoogleGenAI } from '@google/genai';
 
 export class LLMService {
   private config: AIConfig;
@@ -199,36 +202,38 @@ export class LLMService {
             }
         }
 
+        // FIX: Replaced manual fetch with @google/genai SDK for robustness and adherence to guidelines.
         else if (provider === 'gemini') {
-             const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}`;
-             const contents = messages.map(m => ({
-                 role: m.role === 'assistant' ? 'model' : 'user',
-                 parts: [{ text: m.content }]
-             }));
+            if (!apiKey) throw new Error('Gemini API key is required.');
 
-             const response = await fetch(url, {
-                 method: 'POST',
-                 headers: { 'Content-Type': 'application/json' },
-                 body: JSON.stringify({ contents })
-             });
-
-             if (!response.ok) throw new Error(response.statusText);
-
-             const reader = response.body?.getReader();
-             const decoder = new TextDecoder();
-             let buffer = '';
-
-             while (reader) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                buffer += decoder.decode(value, { stream: true });
-                let match;
-                const regex = /"text":\s*"([^"]*)"/g; 
-                while ((match = regex.exec(buffer)) !== null) {
-                     yield match[1].replace(/\\n/g, '\n').replace(/\\"/g, '"');
+            const ai = new GoogleGenAI({ apiKey });
+            
+            let systemInstruction: string | undefined;
+            const chatMessages = messages.filter(m => {
+                if (m.role === 'system' && !systemInstruction) {
+                    systemInstruction = m.content;
+                    return false; // remove from chat messages
                 }
-                if (buffer.length > 10000) buffer = buffer.slice(-1000); 
-             }
+                return m.role === 'user' || m.role === 'assistant';
+            });
+
+            const contents = chatMessages.map(m => ({
+                role: m.role === 'assistant' ? 'model' : 'user',
+                parts: [{ text: m.content }]
+            }));
+
+            const responseStream = await ai.models.generateContentStream({
+                model,
+                contents,
+                ...(systemInstruction && { config: { systemInstruction } })
+            });
+
+            for await (const chunk of responseStream) {
+                const text = chunk.text;
+                if (text) {
+                    yield text;
+                }
+            }
         }
         
         else {

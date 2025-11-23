@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useAI } from '../context/AIContext';
 import { Button } from './ui/Button';
@@ -21,7 +22,8 @@ import { LLMService } from '../services/llmService';
 const KNOWN_MODELS: Record<string, string[]> = {
   openai: ['gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo', 'gpt-4'],
   anthropic: ['claude-3-5-sonnet-latest', 'claude-3-opus-latest', 'claude-3-haiku-20240307'],
-  gemini: ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-pro'],
+  // FIX: Updated deprecated Gemini models to recommended versions.
+  gemini: ['gemini-2.5-flash', 'gemini-3-pro-preview'],
   ollama: [] 
 };
 
