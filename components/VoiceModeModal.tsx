@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, Square, Sparkles, X, Wand2, AlertCircle, RefreshCw } from 'lucide-react';
+import { Mic, Square, Sparkles, X, Wand2, AlertCircle, RefreshCw, Activity } from 'lucide-react';
 import { AudioVisualizer } from './AudioVisualizer';
 import { Button } from './ui/Button';
 import { useAI } from '../context/AIContext';
@@ -17,17 +17,20 @@ type Stage = 'idle' | 'recording' | 'processing' | 'error';
 export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) => {
   const { config } = useAI();
   const [stage, setStage] = useState<Stage>('idle');
-  const [transcript, setTranscript] = useState('');
+  const [finalTranscript, setFinalTranscript] = useState('');
+  const [interimTranscript, setInterimTranscript] = useState('');
   const [aiResponse, setAiResponse] = useState('');
   const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
+  const [isSpeechDetected, setIsSpeechDetected] = useState(false);
   
   const recognitionRef = useRef<any>(null);
   const shouldBeRecording = useRef(false);
 
   useEffect(() => {
     if (isOpen) {
-      setTranscript('');
+      setFinalTranscript('');
+      setInterimTranscript('');
       setAiResponse('');
       setErrorMsg('');
       shouldBeRecording.current = true;
@@ -72,7 +75,7 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
 
     const recognition = new SpeechRecognition();
     recognition.continuous = false; // Manual continuous for robustness
-    recognition.interimResults = true;
+    recognition.interimResults = true; // CRITICAL: Allows seeing text while speaking
     recognition.lang = 'en-US';
     return recognition;
   };
@@ -94,16 +97,28 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
       recognition.onresult = (event: any) => {
         if (!shouldBeRecording.current) return;
 
-        const result = event.results[event.resultIndex];
-        const transcriptText = result[0].transcript;
-        
-        if (result.isFinal) {
-             setTranscript(prev => {
-                 if (prev.trim().endsWith(transcriptText.trim())) return prev;
-                 return prev + ' ' + transcriptText;
-             });
+        let interim = '';
+        let finalChunk = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+                finalChunk += event.results[i][0].transcript;
+            } else {
+                interim += event.results[i][0].transcript;
+            }
         }
+
+        if (finalChunk) {
+            setFinalTranscript(prev => {
+                const spacer = prev ? ' ' : '';
+                return prev + spacer + finalChunk;
+            });
+        }
+        setInterimTranscript(interim);
       };
+
+      recognition.onspeechstart = () => setIsSpeechDetected(true);
+      recognition.onspeechend = () => setIsSpeechDetected(false);
 
       recognition.onerror = (event: any) => {
         if (event.error === 'no-speech') return;
@@ -115,7 +130,11 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
              setStage('error');
              setErrorMsg("Microphone access denied.");
         } else if (event.error === 'network') {
-             console.log("Transient network error in speech, ignoring...");
+             // In non-Chrome browsers, network error often means "API key missing"
+             if (!navigator.userAgent.includes('Chrome')) {
+                 setStage('error');
+                 setErrorMsg("Connection failed. This browser (Brave/Opera/etc) often blocks speech API. Please try Chrome.");
+             }
         }
       };
 
@@ -145,15 +164,18 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
         recognitionRef.current.stop();
     }
     
+    // Combine final and any leftover interim
+    const fullText = (finalTranscript + ' ' + interimTranscript).trim();
+    
     setTimeout(() => {
         cleanupResources();
         setMediaStream(null);
         
-        if (!transcript.trim()) {
+        if (!fullText) {
             onClose(); 
             return;
         }
-        processWithAI();
+        processWithAI(fullText);
     }, 200);
   };
 
@@ -167,14 +189,14 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
     }, 100);
   };
 
-  const processWithAI = async () => {
+  const processWithAI = async (textToProcess: string) => {
     setStage('processing');
     setAiResponse(''); // Reset streaming buffer
     const service = new LLMService(config);
     
     const prompt = `
       I have recorded the following raw thoughts/notes:
-      "${transcript}"
+      "${textToProcess}"
 
       Please restructure this into a clean, professional, and cohesive note.
       - Fix grammar and flow.
@@ -217,8 +239,9 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
               </div>
               <div>
                   <h2 className="text-xl font-bold text-white">Voice Mode</h2>
-                  <p className="text-sm text-gray-400">
+                  <p className="text-sm text-gray-400 flex items-center gap-2">
                       {stage === 'recording' && "Listening..."}
+                      {stage === 'recording' && isSpeechDetected && <span className="text-emerald-500 text-xs px-1.5 py-0.5 bg-emerald-900/30 rounded border border-emerald-500/30">Voice Detected</span>}
                       {stage === 'processing' && "Synthesizing cohesive note..."}
                       {stage === 'error' && "Error occurred"}
                   </p>
@@ -266,7 +289,14 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
                          />
                     ) : (
                         <div className="text-gray-200 leading-relaxed text-lg font-light">
-                             {transcript || <span className="text-gray-600 italic">Start speaking to capture your thoughts...</span>}
+                             {finalTranscript || interimTranscript ? (
+                                <>
+                                    <span>{finalTranscript}</span>
+                                    <span className="text-gray-500 ml-1">{interimTranscript}</span>
+                                </>
+                             ) : (
+                                <span className="text-gray-600 italic">Start speaking to capture your thoughts...</span>
+                             )}
                         </div>
                     )}
                 </div>
