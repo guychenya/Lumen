@@ -18,6 +18,7 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
   const { config } = useAI();
   const [stage, setStage] = useState<Stage>('idle');
   const [transcript, setTranscript] = useState('');
+  const [aiResponse, setAiResponse] = useState('');
   const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
   
@@ -27,6 +28,7 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
   useEffect(() => {
     if (isOpen) {
       setTranscript('');
+      setAiResponse('');
       setErrorMsg('');
       shouldBeRecording.current = true;
       startRecording();
@@ -40,7 +42,7 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
     shouldBeRecording.current = false;
     if (recognitionRef.current) {
         try {
-            recognitionRef.current.onend = null; // Prevent restart loops during cleanup
+            recognitionRef.current.onend = null;
             recognitionRef.current.stop();
         } catch (e) { /* ignore */ }
         recognitionRef.current = null;
@@ -59,7 +61,6 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
   const initSpeech = () => {
     if (typeof window === 'undefined') return null;
 
-    // Check for browser support
     // @ts-ignore
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     
@@ -70,10 +71,7 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
     }
 
     const recognition = new SpeechRecognition();
-    // CRITICAL FIX: Set continuous to false. 
-    // Many non-Chrome browsers fail with Network Error if continuous is true due to socket timeouts.
-    // We will manually restart it in onend to simulate continuous recording.
-    recognition.continuous = false; 
+    recognition.continuous = false; // Manual continuous for robustness
     recognition.interimResults = true;
     recognition.lang = 'en-US';
     return recognition;
@@ -81,7 +79,6 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
 
   const startRecording = async () => {
     try {
-      // 1. Get Mic Stream (for Visualizer)
       let stream = mediaStream;
       if (!stream) {
           stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -97,14 +94,11 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
       recognition.onresult = (event: any) => {
         if (!shouldBeRecording.current) return;
 
-        // With continuous=false, we get one result set per "session"
-        // We handle the concatenation in state updates or by appending final results
         const result = event.results[event.resultIndex];
         const transcriptText = result[0].transcript;
         
         if (result.isFinal) {
              setTranscript(prev => {
-                 // Avoid duplicate appending if the logic fires multiple times
                  if (prev.trim().endsWith(transcriptText.trim())) return prev;
                  return prev + ' ' + transcriptText;
              });
@@ -112,10 +106,7 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
       };
 
       recognition.onerror = (event: any) => {
-        if (event.error === 'no-speech') {
-            // Ignore no-speech, it just means the burst finished without audio
-            return;
-        }
+        if (event.error === 'no-speech') return;
         
         console.warn("Speech recognition error:", event.error);
         
@@ -124,23 +115,15 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
              setStage('error');
              setErrorMsg("Microphone access denied.");
         } else if (event.error === 'network') {
-             // In "burst" mode, network errors are rare, but if they happen, we try to ignore/restart 
-             // unless it persists. For now, we log it.
              console.log("Transient network error in speech, ignoring...");
-        } else {
-             // Aborted or other
         }
       };
 
       recognition.onend = () => {
-        // RESTART LOGIC: "Manual Continuous"
-        // If we are still supposed to be recording, start the engine again immediately.
         if (shouldBeRecording.current && stage !== 'error') {
             try {
                 recognition.start();
-            } catch (e) {
-                // Ignore if already started
-            }
+            } catch (e) {}
         }
       };
 
@@ -158,15 +141,13 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
   const handleFinish = () => {
     shouldBeRecording.current = false;
     if (recognitionRef.current) {
-        recognitionRef.current.onend = null; // Stop the restart loop
+        recognitionRef.current.onend = null;
         recognitionRef.current.stop();
     }
     
-    // Wait small tick to ensure final event processed
     setTimeout(() => {
         cleanupResources();
         setMediaStream(null);
-        setStage('idle');
         
         if (!transcript.trim()) {
             onClose(); 
@@ -188,6 +169,7 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
 
   const processWithAI = async () => {
     setStage('processing');
+    setAiResponse(''); // Reset streaming buffer
     const service = new LLMService(config);
     
     const prompt = `
@@ -202,13 +184,19 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
     `;
 
     try {
-        let result = '';
+        let fullResult = '';
         const generator = service.streamResponse([{ role: 'user', content: prompt }]);
         for await (const chunk of generator) {
-            result += chunk;
+            fullResult += chunk;
+            setAiResponse(prev => prev + chunk); // Live update
         }
-        onInsert(result);
-        onClose();
+        
+        // Allow user to read the summary briefly
+        setTimeout(() => {
+            onInsert(fullResult);
+            onClose();
+        }, 1500);
+
     } catch (e) {
         setStage('error');
         setErrorMsg("AI Processing Failed. Please check settings.");
@@ -247,8 +235,11 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
                <div className="text-gray-600 flex flex-col items-center justify-center h-full">
                    {stage === 'processing' ? (
                         <>
-                            <Wand2 className="w-12 h-12 animate-spin text-purple-500 mb-4" />
-                            <span className="text-purple-400 animate-pulse">Refining thoughts...</span>
+                            <div className="flex items-center gap-3 mb-4">
+                                <Wand2 className="w-8 h-8 animate-spin text-emerald-500" />
+                                <Sparkles className="w-6 h-6 animate-pulse text-purple-500" />
+                            </div>
+                            <span className="text-emerald-400 font-medium animate-pulse">Generating Summary...</span>
                         </>
                    ) : (
                        <div className="text-sm text-gray-600">Microphone inactive</div>
@@ -260,9 +251,24 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
         {/* Content Preview */}
         <div className="p-6 space-y-4">
             <div className="space-y-2">
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Live Transcript</label>
-                <div className="p-4 bg-[#1A1A1A] rounded-xl border border-[#333] min-h-[120px] max-h-[200px] overflow-y-auto text-gray-200 leading-relaxed text-lg font-light transition-all">
-                    {transcript || <span className="text-gray-600 italic">Start speaking to capture your thoughts...</span>}
+                <div className="flex justify-between items-center">
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                        {stage === 'processing' ? 'Generating Note' : 'Live Transcript'}
+                    </label>
+                    {stage === 'processing' && <span className="text-xs text-emerald-500 animate-pulse">Streaming from AI...</span>}
+                </div>
+                
+                <div className="p-4 bg-[#1A1A1A] rounded-xl border border-[#333] min-h-[120px] max-h-[300px] overflow-y-auto transition-all custom-scrollbar">
+                    {stage === 'processing' ? (
+                         <div 
+                            className="prose prose-invert prose-sm max-w-none prose-p:leading-relaxed prose-headings:text-emerald-400"
+                            dangerouslySetInnerHTML={{ __html: aiResponse || '<span class="text-gray-600 italic">Thinking...</span>' }} 
+                         />
+                    ) : (
+                        <div className="text-gray-200 leading-relaxed text-lg font-light">
+                             {transcript || <span className="text-gray-600 italic">Start speaking to capture your thoughts...</span>}
+                        </div>
+                    )}
                 </div>
             </div>
 
