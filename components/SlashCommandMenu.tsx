@@ -24,6 +24,22 @@ export const SlashCommandMenu: React.FC<Props> = ({ isOpen, position, commands, 
     if (isOpen) setSelectedIndex(0);
   }, [isOpen]);
 
+  // FIX: Added a click-outside handler to ensure the menu closes properly.
+  // This prevents a bug where the menu state could get stuck as "open",
+  // which would block the "Enter" key in the main editor.
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (isOpen && menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        onClose();
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen, onClose]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!isOpen) return;
@@ -92,6 +108,7 @@ export const SlashCommandMenu: React.FC<Props> = ({ isOpen, position, commands, 
 
   return (
     <div 
+      ref={menuRef}
       className="fixed z-[99999] w-[300px] bg-white dark:bg-[#1C1C1C] border border-gray-200 dark:border-[#333] rounded-xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100"
       style={menuStyle}
     >
@@ -99,7 +116,7 @@ export const SlashCommandMenu: React.FC<Props> = ({ isOpen, position, commands, 
         <span>Insert Block</span>
         <span className="text-[10px] bg-gray-200 dark:bg-[#222] px-1.5 rounded border border-gray-300 dark:border-[#333]">ESC to close</span>
       </div>
-      <div className="overflow-y-auto flex-1 p-1 custom-scrollbar" ref={menuRef}>
+      <div className="overflow-y-auto flex-1 p-1 custom-scrollbar">
         {commands.map((cmd, index) => (
           <button
             key={cmd.id}
