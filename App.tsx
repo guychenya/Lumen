@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { AIProvider, useAI } from './context/AIContext';
 import { NotesProvider, useNotes } from './context/NotesContext';
@@ -209,7 +208,9 @@ const EditorWorkspace = () => {
       insertTextAtCursor(block);
   };
 
-  // Removed useMemo to prevent stale closure bugs with activeNote/handleContentChange
+  // FIX: Removed useMemo to prevent stale closure bugs.
+  // The command list is now created on every render, ensuring it always has
+  // fresh closures over the latest state and handlers (like handleContentChange).
   const slashCommands: SlashCommand[] = [
       {
         id: 'h1',
