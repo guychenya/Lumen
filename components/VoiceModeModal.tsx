@@ -58,13 +58,16 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
   const initSpeech = () => {
     if (typeof window === 'undefined') return null;
 
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      setStage('error');
-      setErrorMsg("Speech recognition is not supported in this browser. Please try Google Chrome.");
-      return null;
-    }
+    // Check for browser support
     // @ts-ignore
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    
+    if (!SpeechRecognition) {
+      setStage('error');
+      setErrorMsg("This browser does not support Voice Mode. Please use Google Chrome, Edge, or Safari.");
+      return null;
+    }
+
     const recognition = new SpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = true;
@@ -73,6 +76,13 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
   };
 
   const startRecording = async () => {
+    // 1. Check Internet (Required for Web Speech API)
+    if (!navigator.onLine) {
+        setStage('error');
+        setErrorMsg("Voice Mode requires an active internet connection.");
+        return;
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       setMediaStream(stream);
@@ -99,19 +109,25 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
         console.warn("Speech recognition error:", event.error);
         if (event.error === 'no-speech') return; // Ignore transient silence
         
-        // Only treat as hard error if we aren't trying to record anymore
-        // or if it's a fatal permission/network error
+        // Handle specific errors
         if (event.error === 'network') {
              cleanupResources();
              setMediaStream(null);
              setStage('error');
-             setErrorMsg("Network Error: Connection failed. This usually happens in browsers other than Chrome. Please try Chrome or check your internet.");
+             // Detailed explanation for the "Browser compatibility" issue
+             setErrorMsg("Network/API Error: This browser (e.g., Brave, Opera) likely blocks access to Google's Speech API. Please use Google Chrome for this feature.");
         } else if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
              cleanupResources();
              setMediaStream(null);
              setStage('error');
-             setErrorMsg("Microphone access denied. Please allow permissions in your browser.");
-        } 
+             setErrorMsg("Microphone access denied. Please allow permissions in your browser URL bar.");
+        } else if (event.error === 'aborted') {
+             // Ignore aborted, usually manual stop
+        } else {
+             // Generic fallback
+             // Don't kill session on minor errors, but log them
+             console.log("Minor speech error:", event.error);
+        }
       };
 
       recognition.onend = () => {
@@ -131,7 +147,7 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
     } catch (err) {
       console.error("Microphone access error:", err);
       setStage('error');
-      setErrorMsg("Could not access microphone. Please allow permissions.");
+      setErrorMsg("Could not access microphone. Please check your system settings.");
     }
   };
 
@@ -243,7 +259,8 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
 
             {errorMsg && (
                 <div className="p-3 bg-red-900/20 border border-red-500/50 text-red-300 rounded-lg flex items-center gap-2 animate-in slide-in-from-top-2">
-                    <AlertCircle className="w-4 h-4" /> {errorMsg}
+                    <AlertCircle className="w-4 h-4 shrink-0" /> 
+                    <span className="text-sm font-medium">{errorMsg}</span>
                 </div>
             )}
         </div>
