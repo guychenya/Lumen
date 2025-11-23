@@ -1,12 +1,13 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+
+import React, { useState, useRef, useEffect } from 'react';
 import { AIProvider, useAI } from './context/AIContext';
 import { NotesProvider, useNotes } from './context/NotesContext';
 import { AISettingsModal } from './components/AISettingsModal';
 import { Button } from './components/ui/Button';
 import { LLMService } from './services/llmService';
-import { htmlToMarkdown, htmlToText } from './services/converter';
+import { htmlToMarkdown } from './services/converter';
 import { parseMarkdown } from './services/markdown';
-import { SlashCommandMenu, SlashCommand } from './components/SlashCommandMenu';
+import { SlashCommandMenu, type SlashCommand } from './components/SlashCommandMenu';
 import { VoiceModeModal } from './components/VoiceModeModal';
 import { ChatMessage } from './types';
 import { 
@@ -14,7 +15,7 @@ import {
   Bold, Italic, List, PenLine, Trash2, Edit2, Image as ImageIcon, 
   Table as TableIcon, Download, Upload, File, FileCode, Printer, ChevronDown, Mic,
   Heading1, Heading2, Heading3, ListOrdered, CheckSquare, Quote, Code, Minus, Video, Type,
-  Eye, EyeOff, Columns, GripVertical
+  Eye, Columns
 } from 'lucide-react';
 
 // Helper to calculate caret coordinates in a textarea
@@ -182,7 +183,8 @@ const EditorWorkspace = () => {
       insertTextAtCursor(block);
   };
 
-  const slashCommands: SlashCommand[] = useMemo(() => [
+  // Removed useMemo to prevent stale closure bugs with activeNote/handleContentChange
+  const slashCommands: SlashCommand[] = [
       {
         id: 'h1',
         label: 'Heading 1',
@@ -284,7 +286,7 @@ const EditorWorkspace = () => {
         description: 'Visually divide blocks',
         action: () => insertTextAtCursor('\n---\n')
       }
-  ], []);
+  ];
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Intercept navigation when slash menu is open
@@ -351,20 +353,35 @@ const EditorWorkspace = () => {
           const reader = new FileReader();
           reader.onload = (e) => {
               const base64 = e.target?.result as string;
-              // Wrap image in a reasoning-model style collapsible block
-              const imageBlock = `
-<details class="group bg-[#1A1A1A] border border-[#333] rounded-lg p-3 my-4 open:bg-[#111] transition-all">
-<summary class="cursor-pointer text-sm text-gray-400 group-hover:text-white font-medium select-none flex items-center gap-2">
-<span>🖼️</span> <span>Uploaded Image (${file.name})</span>
-</summary>
-<div class="mt-3 pt-3 border-t border-[#333]">
+              // Sanitize filename for markdown
+              const cleanName = file.name.replace(/[\[\]\(\)\s]/g, '_'); 
+              const refId = `img_${Date.now()}`;
+              
+              // Use Markdown Reference Style to keep editor clean
+              // Insert Tag at cursor: ![name][id]
+              const imageTag = `![${cleanName}][${refId}]`;
+              // Append Definition at end of file: [id]: data...
+              const refDef = `\n\n[${refId}]: ${base64}`;
 
-![${file.name}](${base64})
-
-</div>
-</details>
-`;
-              insertTextAtCursor(imageBlock);
+              if (!textareaRef.current) return;
+              
+              const start = textareaRef.current.selectionStart;
+              const end = textareaRef.current.selectionEnd;
+              const currentVal = textareaRef.current.value;
+              
+              // Insert tag at cursor, definition at end
+              const newVal = currentVal.substring(0, start) + imageTag + currentVal.substring(end) + refDef;
+              
+              handleContentChange(newVal);
+              
+              // Reset cursor after tag
+              setTimeout(() => {
+                  if (textareaRef.current) {
+                      textareaRef.current.focus();
+                      const newCursorPos = start + imageTag.length;
+                      textareaRef.current.setSelectionRange(newCursorPos, newCursorPos);
+                  }
+              }, 0);
           };
           reader.readAsDataURL(file);
       }
@@ -584,7 +601,7 @@ const EditorWorkspace = () => {
                 <button onClick={() => insertTextAtCursor('*italic text*')} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded" title="Italic"><Italic className="w-4 h-4" /></button>
                 <button onClick={() => insertTextAtCursor('- ')} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded" title="Bullet List"><List className="w-4 h-4" /></button>
                 <button onClick={() => fileInputRef.current?.click()} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded" title="Insert Image"><ImageIcon className="w-4 h-4" /></button>
-                <button onClick={() => insertTextAtCursor('## ')} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded font-serif font-bold text-xs" title="Heading">H2</button>
+                <button onClick={() => insertTextAtCursor('## ')} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded" title="Heading">H2</button>
             </div>
             
             <div className="flex items-center gap-2 pl-2 whitespace-nowrap flex-1">
