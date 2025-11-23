@@ -3,17 +3,17 @@ export const parseMarkdown = (text: string): string => {
   if (!text) return '';
 
   // 1. Basic sanitization (prevent script/onclick but allow structural HTML)
-  // We'll temporarily protect known safe complex tags (iframe, video, and their wrappers) by encoding them uniquely
+  // We'll temporarily protect known safe complex tags (iframe, video, details, and their wrappers) by encoding them uniquely
   let html = text;
 
-  // Protect Videos/Iframes and their wrappers from basic sanitization
+  // Protect Videos/Iframes/Details and their wrappers from basic sanitization
   const replacements: { id: string, val: string }[] = [];
   
-  // Matches <div class="aspect-video..."><iframe...></iframe></div> or standalone video/iframe
-  // The regex needs to be careful. We look for specific known classes used in App.tsx
-  const mediaRegex = /(<div class="aspect-video[^"]*">[\s\S]*?(?:<iframe|<video)[\s\S]*?(?:<\/iframe>|<\/video>)[\s\S]*?<\/div>|<iframe[\s\S]*?<\/iframe>|<video[\s\S]*?<\/video>)/gim;
+  // Matches <div class="aspect-video...">...</div> OR <details>...</details> OR standalone video/iframe
+  // We use specific regexes to capture these blocks including their content
+  const protectionRegex = /(<div class="aspect-video[^"]*">[\s\S]*?(?:<iframe|<video)[\s\S]*?(?:<\/iframe>|<\/video>)[\s\S]*?<\/div>|<iframe[\s\S]*?<\/iframe>|<video[\s\S]*?<\/video>|<details[\s\S]*?<\/details>)/gim;
   
-  html = html.replace(mediaRegex, (match) => {
+  html = html.replace(protectionRegex, (match) => {
       const id = `__MEDIA_${Math.random().toString(36).substr(2, 9)}__`;
       replacements.push({ id, val: match });
       return id;
@@ -26,7 +26,7 @@ export const parseMarkdown = (text: string): string => {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 
-  // Restore Protected Media
+  // Restore Protected Media immediately so internal markdown (like ![]() inside details) can be processed
   replacements.forEach(rep => {
       html = html.replace(rep.id, rep.val);
   });
@@ -88,7 +88,8 @@ export const parseMarkdown = (text: string): string => {
   const processedLines = lines.map(line => {
       const trimmed = line.trim();
       if (!trimmed) return '';
-      if (trimmed.startsWith('<')) return trimmed; // already HTML
+      // Simple check to avoid wrapping block HTML tags in <p>
+      if (trimmed.match(/^<(div|ul|li|h|p|blockquote|pre|table|hr|details|summary)/i)) return trimmed; 
       return `<p class="mb-4">${trimmed}</p>`;
   });
   

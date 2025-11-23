@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { AIProvider, useAI } from './context/AIContext';
 import { NotesProvider, useNotes } from './context/NotesContext';
@@ -352,7 +351,20 @@ const EditorWorkspace = () => {
           const reader = new FileReader();
           reader.onload = (e) => {
               const base64 = e.target?.result as string;
-              insertTextAtCursor(`\n![Uploaded Image](${base64})\n`);
+              // Wrap image in a reasoning-model style collapsible block
+              const imageBlock = `
+<details class="group bg-[#1A1A1A] border border-[#333] rounded-lg p-3 my-4 open:bg-[#111] transition-all">
+<summary class="cursor-pointer text-sm text-gray-400 group-hover:text-white font-medium select-none flex items-center gap-2">
+<span>🖼️</span> <span>Uploaded Image (${file.name})</span>
+</summary>
+<div class="mt-3 pt-3 border-t border-[#333]">
+
+![${file.name}](${base64})
+
+</div>
+</details>
+`;
+              insertTextAtCursor(imageBlock);
           };
           reader.readAsDataURL(file);
       }

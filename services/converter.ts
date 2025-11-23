@@ -1,3 +1,4 @@
+
 import { parseMarkdown } from './markdown';
 
 // Helper to convert HTML back to Markdown for export/storage
@@ -104,6 +105,26 @@ export const htmlToMarkdown = (html: string): string => {
                 traverseChildren(el);
                 md += '\n';
             }
+            break;
+        case 'details':
+            // Preserve collapsible blocks
+            // We want to reconstruct the opening tag, traverse children, then closing tag
+            // But simplify: just output outerHTML if we want to preserve attributes exactly
+            // HOWEVER, we want the content inside to be markdown-ified if possible.
+            // But mixing raw HTML tag strings with markdown content is tricky if we reuse traverse.
+            
+            // Let's try to preserve the structure but convert content.
+            // Constructing opening tag manually to keep classes:
+            const openTag = el.outerHTML.split('>')[0] + '>';
+            md += `\n${openTag}\n`;
+            traverseChildren(el);
+            md += `\n</details>\n`;
+            break;
+        case 'summary':
+            const summaryOpen = el.outerHTML.split('>')[0] + '>';
+            md += `\n${summaryOpen}`;
+            traverseChildren(el);
+            md += `</summary>\n`;
             break;
         case 'br':
             md += '\n';
