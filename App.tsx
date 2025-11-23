@@ -47,12 +47,30 @@ const EditorWorkspace = () => {
 
   const insertVideo = (url: string) => {
     let html = '';
-    if (url.includes('youtube.com') || url.includes('youtu.be')) {
-        const videoId = url.split('v=')[1]?.split('&')[0] || url.split('/').pop();
-        html = `<div class="aspect-video my-6"><iframe src="https://www.youtube.com/embed/${videoId}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen class="w-full h-[400px] rounded-xl border border-[#333] shadow-lg"></iframe></div><p><br/></p>`;
-    } else {
-        html = `<video src="${url}" controls class="w-full rounded-xl border border-[#333] shadow-lg my-6"></video><p><br/></p>`;
+    // Simple robust detection
+    const isYoutube = url.includes('youtube.com') || url.includes('youtu.be');
+    
+    if (isYoutube) {
+        // Extract ID
+        let videoId = '';
+        if (url.includes('youtu.be')) {
+            videoId = url.split('/').pop() || '';
+        } else if (url.includes('v=')) {
+            videoId = url.split('v=')[1]?.split('&')[0] || '';
+        } else if (url.includes('embed/')) {
+            videoId = url.split('embed/')[1]?.split('?')[0] || '';
+        }
+
+        if (videoId) {
+             html = `<div class="aspect-video my-6 rounded-xl overflow-hidden border border-[#333] shadow-lg"><iframe src="https://www.youtube.com/embed/${videoId}" class="w-full h-full" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div><p><br/></p>`;
+        }
+    } 
+    
+    if (!html) {
+        // Fallback to generic video tag
+        html = `<div class="aspect-video my-6 rounded-xl overflow-hidden border border-[#333] shadow-lg"><video src="${url}" controls class="w-full h-full"></video></div><p><br/></p>`;
     }
+    
     insertHtml(html);
   };
 
@@ -126,7 +144,7 @@ const EditorWorkspace = () => {
       },
       {
         id: 'video',
-        label: 'Video',
+        label: 'Video / YouTube',
         icon: Video,
         description: 'Embed a video from URL or YouTube',
         action: () => {
@@ -165,10 +183,14 @@ const EditorWorkspace = () => {
   ], []);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Intercept navigation when slash menu is open
     if (slashMenuOpen) {
-        // Let the menu handle arrows and enter
-        if (['ArrowUp', 'ArrowDown', 'Enter'].includes(e.key)) return; 
-        if (e.key === 'Escape') setSlashMenuOpen(false);
+        if (['ArrowUp', 'ArrowDown', 'Enter', 'Escape'].includes(e.key)) {
+            // Prevent editor from handling these keys so the cursor doesn't move
+            e.preventDefault(); 
+            // The SlashCommandMenu component has a window capture listener that handles the logic
+            return;
+        }
     }
 
     if (e.key === '/') {
@@ -177,9 +199,12 @@ const EditorWorkspace = () => {
            const range = selection.getRangeAt(0);
            const rect = range.getBoundingClientRect();
            
-           // Calculate fixed position based on viewport
+           // Set position based on viewport coordinates (rect is already viewport relative)
+           // We don't need window.scrollY if the menu is fixed. 
+           // However, if the text is near the edge, standard fixed might not be enough, 
+           // but SlashCommandMenu now handles edge collision.
            setSlashMenuPos({
-               top: rect.bottom + 10, 
+               top: rect.bottom + 8, 
                left: rect.left
            });
            setSlashMenuOpen(true);
@@ -188,8 +213,8 @@ const EditorWorkspace = () => {
   };
 
   const executeSlashCommand = (command: SlashCommand) => {
-    // Remove the slash that triggered the menu (heuristic: delete last character)
-    document.execCommand('delete'); // Remove the slash
+    // Remove the slash that triggered the menu
+    document.execCommand('delete'); 
     command.action();
     setSlashMenuOpen(false);
     editorRef.current?.focus();
@@ -544,11 +569,11 @@ const EditorWorkspace = () => {
 
 const App = () => {
   return (
-    <NotesProvider>
-        <AIProvider>
-            <EditorWorkspace />
-        </AIProvider>
-    </NotesProvider>
+    <AIProvider>
+      <NotesProvider>
+        <EditorWorkspace />
+      </NotesProvider>
+    </AIProvider>
   );
 };
 

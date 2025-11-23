@@ -97,8 +97,13 @@ export const htmlToMarkdown = (html: string): string => {
             md += '\n---\n';
             break;
         case 'div':
-            traverseChildren(el);
-            md += '\n';
+            // Detect our custom video wrapper and preserve it whole
+            if (el.classList.contains('aspect-video')) {
+                md += `\n${el.outerHTML}\n`;
+            } else {
+                traverseChildren(el);
+                md += '\n';
+            }
             break;
         case 'br':
             md += '\n';

@@ -30,21 +30,25 @@ export const SlashCommandMenu: React.FC<Props> = ({ isOpen, position, commands, 
 
       if (e.key === 'ArrowDown') {
         e.preventDefault();
+        e.stopPropagation();
         setSelectedIndex(prev => (prev + 1) % commands.length);
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
+        e.stopPropagation();
         setSelectedIndex(prev => (prev - 1 + commands.length) % commands.length);
       } else if (e.key === 'Enter') {
         e.preventDefault();
+        e.stopPropagation();
         onSelect(commands[selectedIndex]);
       } else if (e.key === 'Escape') {
         e.preventDefault();
+        e.stopPropagation();
         onClose();
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', handleKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
   }, [isOpen, selectedIndex, onSelect, onClose, commands]);
 
   useEffect(() => {
@@ -58,29 +62,44 @@ export const SlashCommandMenu: React.FC<Props> = ({ isOpen, position, commands, 
 
   if (!isOpen) return null;
 
-  // Ensure menu doesn't go off screen
-  const menuStyle: React.CSSProperties = {
-    top: position.top,
-    left: position.left,
-    maxHeight: '300px'
-  };
+  // Calculate position to keep in viewport
+  const MENU_WIDTH = 300;
+  const MENU_HEIGHT = 320; // Approximate max height
+  const PADDING = 16;
+  
+  let top = position.top;
+  let left = position.left;
+  let origin = 'top';
 
-  // Adjust if too close to bottom (simplified)
-  if (position.top > window.innerHeight - 300) {
-      menuStyle.top = 'auto';
-      menuStyle.bottom = window.innerHeight - position.top + 20;
+  // Horizontal clamping
+  if (left + MENU_WIDTH > window.innerWidth - PADDING) {
+    left = window.innerWidth - MENU_WIDTH - PADDING;
   }
+  if (left < PADDING) left = PADDING;
+
+  // Vertical flipping
+  if (top + MENU_HEIGHT > window.innerHeight - PADDING) {
+    top = position.top - MENU_HEIGHT - 40; // Flip up above the cursor line
+    origin = 'bottom';
+  }
+
+  const menuStyle: React.CSSProperties = {
+    top: `${top}px`,
+    left: `${left}px`,
+    maxHeight: `${MENU_HEIGHT}px`,
+    transformOrigin: origin === 'bottom' ? 'bottom left' : 'top left'
+  };
 
   return (
     <div 
-      className="fixed z-[9999] w-72 bg-[#1C1C1C] border border-[#333] rounded-xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100"
+      className="fixed z-[9999] w-[300px] bg-[#1C1C1C] border border-[#333] rounded-xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100"
       style={menuStyle}
     >
       <div className="px-3 py-2 border-b border-[#2A2A2A] bg-[#161616] text-xs font-semibold text-gray-500 uppercase tracking-wider flex justify-between items-center">
         <span>Insert Block</span>
         <span className="text-[10px] bg-[#222] px-1.5 rounded border border-[#333]">ESC to close</span>
       </div>
-      <div className="overflow-y-auto flex-1 p-1 custom-scrollbar" ref={menuRef} style={{ maxHeight: '280px' }}>
+      <div className="overflow-y-auto flex-1 p-1 custom-scrollbar" ref={menuRef}>
         {commands.map((cmd, index) => (
           <button
             key={cmd.id}
@@ -91,7 +110,7 @@ export const SlashCommandMenu: React.FC<Props> = ({ isOpen, position, commands, 
                 : 'text-gray-300 hover:bg-[#2A2A2A] border border-transparent'
             }`}
           >
-            <div className={`p-1.5 rounded-md ${index === selectedIndex ? 'bg-emerald-600 text-white' : 'bg-[#222] text-gray-400'}`}>
+            <div className={`p-1.5 rounded-md shrink-0 ${index === selectedIndex ? 'bg-emerald-600 text-white' : 'bg-[#222] text-gray-400'}`}>
                 <cmd.icon className="w-4 h-4" />
             </div>
             <div className="flex-1 overflow-hidden">

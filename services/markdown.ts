@@ -3,12 +3,17 @@ export const parseMarkdown = (text: string): string => {
   if (!text) return '';
 
   // 1. Basic sanitization (prevent script/onclick but allow structural HTML)
-  // We'll temporarily protect known safe complex tags (iframe, video) by encoding them uniquely
+  // We'll temporarily protect known safe complex tags (iframe, video, and their wrappers) by encoding them uniquely
   let html = text;
 
-  // Protect Videos/Iframes from basic sanitization
+  // Protect Videos/Iframes and their wrappers from basic sanitization
   const replacements: { id: string, val: string }[] = [];
-  html = html.replace(/(<iframe[\s\S]*?<\/iframe>|<video[\s\S]*?<\/video>)/gim, (match) => {
+  
+  // Matches <div class="aspect-video..."><iframe...></iframe></div> or standalone video/iframe
+  // The regex needs to be careful. We look for specific known classes used in App.tsx
+  const mediaRegex = /(<div class="aspect-video[^"]*">[\s\S]*?(?:<iframe|<video)[\s\S]*?(?:<\/iframe>|<\/video>)[\s\S]*?<\/div>|<iframe[\s\S]*?<\/iframe>|<video[\s\S]*?<\/video>)/gim;
+  
+  html = html.replace(mediaRegex, (match) => {
       const id = `__MEDIA_${Math.random().toString(36).substr(2, 9)}__`;
       replacements.push({ id, val: match });
       return id;
