@@ -34,6 +34,24 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
+  const cleanupResources = () => {
+    if (recognitionRef.current) {
+        try {
+            recognitionRef.current.stop();
+        } catch (e) { /* ignore */ }
+        recognitionRef.current = null;
+    }
+    if (mediaStream) {
+        mediaStream.getTracks().forEach(track => track.stop());
+    }
+  };
+
+  const stopEverything = () => {
+    cleanupResources();
+    setMediaStream(null);
+    if (stage !== 'error') setStage('idle');
+  };
+
   const initSpeech = () => {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
       setStage('error');
@@ -55,7 +73,10 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
       setMediaStream(stream);
       
       const recognition = initSpeech();
-      if (!recognition) return;
+      if (!recognition) {
+          stream.getTracks().forEach(t => t.stop()); // cleanup if no recognition
+          return;
+      }
 
       recognition.onresult = (event: any) => {
         let final = '';
@@ -70,27 +91,40 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
       };
 
       recognition.onerror = (event: any) => {
-        console.error("Speech error", event.error);
+        console.warn("Speech recognition error:", event.error);
+        if (event.error === 'no-speech') return; // Ignore transient silence
+        
+        cleanupResources();
+        setMediaStream(null);
+        setStage('error');
+
+        if (event.error === 'network') {
+             setErrorMsg("Network Error: Browser speech recognition requires an active internet connection.");
+        } else if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+             setErrorMsg("Microphone access denied. Please allow permissions in your browser.");
+        } else if (event.error === 'aborted') {
+             // Ignore aborted, usually manual stop
+             setStage('idle'); 
+        } else {
+             setErrorMsg(`Speech Recognition Error: ${event.error}`);
+        }
       };
 
       recognition.start();
       recognitionRef.current = recognition;
       setStage('recording');
     } catch (err) {
+      console.error("Microphone access error:", err);
       setStage('error');
       setErrorMsg("Could not access microphone. Please allow permissions.");
     }
   };
 
-  const stopEverything = () => {
-    if (recognitionRef.current) recognitionRef.current.stop();
-    if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());
+  const handleFinish = () => {
+    cleanupResources();
     setMediaStream(null);
     setStage('idle');
-  };
-
-  const handleFinish = () => {
-    stopEverything();
+    
     if (!transcript.trim()) {
         onClose(); // No text recorded
         return;
