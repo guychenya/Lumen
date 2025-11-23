@@ -98,28 +98,37 @@ const EditorWorkspace = () => {
   }, [activeNoteId]);
 
 
-  // --- HTML/MD State Sync ---
-  // We treat activeNote.content as the Source of Truth.
+  // --- HTML/MD State Sync & Editor Filtering ---
+  // `localContent` is what the user SEES in the editor.
+  // It's a filtered version of `activeNote.content` to hide image reference definitions.
   const [localContent, setLocalContent] = useState("");
+  const imageRefRegex = /^\s*\[img_.*?\]: data:image\/.*$/gm;
+
 
   useEffect(() => {
     if (activeNote) {
-        // Simple heuristic: If it starts with a tag, it might be legacy HTML
-        const isLikelyHtml = /^\s*<[^>]+>/i.test(activeNote.content);
+        let contentToDisplay = activeNote.content;
+        const isLikelyHtml = /^\s*<[^>]+>/i.test(contentToDisplay);
         if (isLikelyHtml) {
-            setLocalContent(htmlToMarkdown(activeNote.content));
-        } else {
-            setLocalContent(activeNote.content);
+            contentToDisplay = htmlToMarkdown(contentToDisplay);
         }
+        
+        // Filter out image reference definitions for a cleaner editor view.
+        const contentWithoutImageRefs = contentToDisplay.replace(imageRefRegex, '').trim();
+        
+        setLocalContent(contentWithoutImageRefs);
     } else {
         setLocalContent("");
     }
   }, [activeNoteId, activeNote]);
 
   const handleContentChange = (val: string) => {
-      setLocalContent(val);
+      setLocalContent(val); // Update local state for immediate feedback
       if (activeNote) {
-          updateNote(activeNote.id, { content: val });
+          // Re-attach the image reference definitions that are visually hidden.
+          const imageRefs = activeNote.content.match(imageRefRegex) || [];
+          const fullContent = val.trim() + (imageRefs.length > 0 ? '\n\n' + imageRefs.join('\n') : '');
+          updateNote(activeNote.id, { content: fullContent.trim() });
       }
   };
 
@@ -208,9 +217,6 @@ const EditorWorkspace = () => {
       insertTextAtCursor(block);
   };
 
-  // FIX: Removed useMemo to prevent stale closure bugs.
-  // The command list is now created on every render, ensuring it always has
-  // fresh closures over the latest state and handlers (like handleContentChange).
   const slashCommands: SlashCommand[] = [
       {
         id: 'h1',
@@ -380,28 +386,26 @@ const EditorWorkspace = () => {
           const reader = new FileReader();
           reader.onload = (e) => {
               const base64 = e.target?.result as string;
-              // Sanitize filename for markdown
               const cleanName = file.name.replace(/[\[\]\(\)\s]/g, '_'); 
               const refId = `img_${Date.now()}`;
               
-              // Use Markdown Reference Style to keep editor clean
-              // Insert Tag at cursor: ![name][id]
               const imageTag = `![${cleanName}][${refId}]`;
-              // Append Definition at end of file: [id]: data...
-              const refDef = `\n\n[${refId}]: ${base64}`;
+              const newRefDef = `[${refId}]: ${base64}`;
 
-              if (!textareaRef.current) return;
+              if (!textareaRef.current || !activeNote) return;
               
               const start = textareaRef.current.selectionStart;
               const end = textareaRef.current.selectionEnd;
-              const currentVal = textareaRef.current.value;
+              const currentEditorVal = textareaRef.current.value;
               
-              // Insert tag at cursor, definition at end
-              const newVal = currentVal.substring(0, start) + imageTag + currentVal.substring(end) + refDef;
+              const newEditorVal = currentEditorVal.substring(0, start) + imageTag + currentEditorVal.substring(end);
               
-              handleContentChange(newVal);
+              const existingImageRefs = activeNote.content.match(imageRefRegex) || [];
+              const allRefs = [...existingImageRefs, newRefDef];
+              const newFullContent = newEditorVal.trim() + '\n\n' + allRefs.join('\n');
               
-              // Reset cursor after tag
+              updateNote(activeNote.id, { content: newFullContent.trim() });
+              
               setTimeout(() => {
                   if (textareaRef.current) {
                       textareaRef.current.focus();
@@ -412,7 +416,6 @@ const EditorWorkspace = () => {
           };
           reader.readAsDataURL(file);
       }
-      // Reset file input to allow re-uploading the same file
       e.target.value = '';
   };
 
@@ -477,7 +480,8 @@ const EditorWorkspace = () => {
           return;
       }
 
-      const content = localContent;
+      // For md/txt, use the full, un-filtered content
+      const content = activeNote.content;
       const mime = type === 'md' ? 'text/markdown' : 'text/plain';
       const ext = type;
 
@@ -751,7 +755,7 @@ const EditorWorkspace = () => {
                         prose-a:text-blue-400 prose-img:rounded-xl prose-img:shadow-lg
                         prose-blockquote:border-l-emerald-500 prose-blockquote:bg-[#1A1A1A]
                         prose-code:text-emerald-300 prose-code:bg-[#222] prose-code:rounded prose-code:px-1"
-                        dangerouslySetInnerHTML={{ __html: parseMarkdown(localContent) }}
+                        dangerouslySetInnerHTML={{ __html: parseMarkdown(activeNote.content) }}
                     />
                </div>
              </>
