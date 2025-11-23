@@ -10,6 +10,7 @@ interface NotesContextType {
   addNote: () => void;
   updateNote: (id: string, updates: Partial<Note>) => void;
   deleteNote: (id: string) => void;
+  importNote: (title: string, content: string) => void;
   activeNote: Note | undefined;
 }
 
@@ -31,7 +32,12 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       setNotes([newNote]);
       setActiveNoteId(newNote.id);
     } else if (!activeNoteId && notes.length > 0) {
-      setActiveNoteId(notes[0].id);
+      // Sort notes by last updated to show the most recent first
+      const sortedNotes = [...notes].sort((a, b) => b.updatedAt - a.updatedAt);
+      if (notes.length !== sortedNotes.length || notes.some((n, i) => n.id !== sortedNotes[i].id)) {
+        setNotes(sortedNotes);
+      }
+      setActiveNoteId(sortedNotes[0].id);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -43,14 +49,32 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       content: '',
       updatedAt: Date.now(),
     };
-    setNotes([newNote, ...notes]);
+    setNotes(prevNotes => [newNote, ...prevNotes]);
+    setActiveNoteId(newNote.id);
+  };
+  
+  const importNote = (title: string, content: string) => {
+    const newNote: Note = {
+      id: crypto.randomUUID(),
+      title,
+      content,
+      updatedAt: Date.now(),
+    };
+    setNotes(prevNotes => [newNote, ...prevNotes]);
     setActiveNoteId(newNote.id);
   };
 
   const updateNote = (id: string, updates: Partial<Note>) => {
-    setNotes(prevNotes => prevNotes.map(note => 
-      note.id === id ? { ...note, ...updates, updatedAt: Date.now() } : note
-    ));
+    setNotes(prevNotes => {
+        const noteToUpdate = prevNotes.find(note => note.id === id);
+        if (!noteToUpdate) return prevNotes;
+        
+        const updatedNote = { ...noteToUpdate, ...updates, updatedAt: Date.now() };
+        
+        // Move updated note to the top of the list
+        const otherNotes = prevNotes.filter(note => note.id !== id);
+        return [updatedNote, ...otherNotes];
+    });
   };
 
   const deleteNote = (id: string) => {
@@ -64,7 +88,7 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const activeNote = notes.find(n => n.id === activeNoteId);
 
   return (
-    <NotesContext.Provider value={{ notes, activeNoteId, setActiveNoteId, addNote, updateNote, deleteNote, activeNote }}>
+    <NotesContext.Provider value={{ notes, activeNoteId, setActiveNoteId, addNote, updateNote, deleteNote, importNote, activeNote }}>
       {children}
     </NotesContext.Provider>
   );

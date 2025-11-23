@@ -63,7 +63,7 @@ type ViewMode = 'edit' | 'split' | 'preview';
 
 const EditorWorkspace = () => {
   const { setSettingsOpen, config, connectionStatus } = useAI();
-  const { notes, activeNote, activeNoteId, setActiveNoteId, addNote, updateNote, deleteNote } = useNotes();
+  const { notes, activeNote, activeNoteId, setActiveNoteId, addNote, updateNote, deleteNote, importNote } = useNotes();
   
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedText, setGeneratedText] = useState("");
@@ -82,7 +82,8 @@ const EditorWorkspace = () => {
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const headerTitleRef = useRef<HTMLInputElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageFileInputRef = useRef<HTMLInputElement>(null);
+  const mdFileInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // --- HTML/MD State Sync ---
@@ -101,7 +102,7 @@ const EditorWorkspace = () => {
     } else {
         setLocalContent("");
     }
-  }, [activeNoteId]);
+  }, [activeNoteId, activeNote]);
 
   const handleContentChange = (val: string) => {
       setLocalContent(val);
@@ -239,7 +240,7 @@ const EditorWorkspace = () => {
         label: 'Image Upload',
         icon: Upload,
         description: 'Upload an image from your device',
-        action: () => fileInputRef.current?.click()
+        action: () => imageFileInputRef.current?.click()
       },
       {
         id: 'image-url',
@@ -385,6 +386,32 @@ const EditorWorkspace = () => {
           };
           reader.readAsDataURL(file);
       }
+      // Reset file input to allow re-uploading the same file
+      e.target.value = '';
+  };
+
+  const handleImportMarkdown = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        const content = event.target?.result as string;
+        
+        const generateTitle = (filename: string) => {
+            const base = filename.replace(/\.(md|markdown)$/i, '');
+            return base.replace(/[_-]/g, ' ')
+                       .split(' ')
+                       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                       .join(' ');
+        };
+        const title = generateTitle(file.name);
+        
+        importNote(title, content);
+    };
+    reader.readAsText(file);
+    // Reset file input
+    e.target.value = '';
   };
 
   // --- AI Actions ---
@@ -475,13 +502,20 @@ const EditorWorkspace = () => {
            ))}
         </div>
 
-        <div className="p-3 border-t border-[#222] mt-auto">
-           <button 
+        <div className="p-3 border-t border-[#222] mt-auto space-y-2">
+           <Button 
              onClick={addNote}
-             className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded-lg text-sm font-medium transition-all shadow-lg shadow-emerald-900/20"
+             className="w-full bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-900/20"
            >
-              <Plus className="w-4 h-4" /> New Note
-           </button>
+              <Plus className="w-4 h-4 mr-2" /> New Note
+           </Button>
+           <Button 
+             variant="secondary"
+             onClick={() => mdFileInputRef.current?.click()}
+             className="w-full"
+           >
+              <Upload className="w-4 h-4 mr-2" /> Import .md file
+           </Button>
         </div>
       </div>
 
@@ -600,7 +634,7 @@ const EditorWorkspace = () => {
                 <button onClick={() => insertTextAtCursor('**bold text**')} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded" title="Bold"><Bold className="w-4 h-4" /></button>
                 <button onClick={() => insertTextAtCursor('*italic text*')} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded" title="Italic"><Italic className="w-4 h-4" /></button>
                 <button onClick={() => insertTextAtCursor('- ')} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded" title="Bullet List"><List className="w-4 h-4" /></button>
-                <button onClick={() => fileInputRef.current?.click()} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded" title="Insert Image"><ImageIcon className="w-4 h-4" /></button>
+                <button onClick={() => imageFileInputRef.current?.click()} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded" title="Insert Image"><ImageIcon className="w-4 h-4" /></button>
                 <button onClick={() => insertTextAtCursor('## ')} className="p-2 text-gray-400 hover:text-white hover:bg-[#222] rounded" title="Heading">H2</button>
             </div>
             
@@ -683,13 +717,20 @@ const EditorWorkspace = () => {
                </div>
            )}
 
-           {/* Hidden File Input */}
+           {/* Hidden File Inputs */}
            <input 
                 type="file" 
-                ref={fileInputRef}
+                ref={imageFileInputRef}
                 className="hidden"
                 accept="image/*"
                 onChange={handleImageUpload}
+           />
+           <input 
+                type="file" 
+                ref={mdFileInputRef}
+                className="hidden"
+                accept=".md,.markdown,text/markdown"
+                onChange={handleImportMarkdown}
            />
 
            {/* AI Output Overlay */}
