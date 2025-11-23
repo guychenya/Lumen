@@ -21,11 +21,12 @@ import {
 } from 'lucide-react';
 import { LLMService } from '../services/llmService';
 
+// Fallback models if API fetch fails before user interaction
 const KNOWN_MODELS: Record<string, string[]> = {
-  openai: ['gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo', 'gpt-4'],
+  openai: ['gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo'],
   anthropic: ['claude-3-5-sonnet-latest', 'claude-3-opus-latest', 'claude-3-haiku-20240307'],
   gemini: ['gemini-2.5-flash', 'gemini-3-pro-preview'],
-  groq: ['llama-3.1-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'],
+  groq: [], // Will be fetched dynamically
   custom: [],
   ollama: [] 
 };
@@ -40,17 +41,34 @@ export const AISettingsModal: React.FC = () => {
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [isModelListOpen, setIsModelListOpen] = useState(false);
   const modelListRef = useRef<HTMLDivElement>(null);
+  const debounceTimer = useRef<number | null>(null);
 
   // Connection Test State
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
+  // When modal opens, sync local state
   useEffect(() => {
     if (isSettingsOpen) {
       setLocalConfig(config);
       setTestResult(null);
+      // Trigger initial model load for the current provider
+      loadModelsForProvider(config);
     }
-  }, [isSettingsOpen, config]);
+  }, [isSettingsOpen]);
+  
+  // Debounced effect to load models when credentials change
+  useEffect(() => {
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    debounceTimer.current = window.setTimeout(() => {
+        loadModelsForProvider(localConfig);
+    }, 500); // 500ms debounce
+
+    return () => {
+        if(debounceTimer.current) clearTimeout(debounceTimer.current);
+    }
+  }, [localConfig.provider, localConfig.apiKey, localConfig.baseUrl]);
+
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -61,54 +79,88 @@ export const AISettingsModal: React.FC = () => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-
-  useEffect(() => {
-    if (localConfig.provider === 'ollama') {
-      fetchOllamaModels();
-      if (typeof window !== 'undefined' && window.location.protocol === 'https:' && localConfig.baseUrl?.includes('http:')) {
-          setIsMixedContent(true);
-      } else {
-          setIsMixedContent(false);
-      }
-    } else {
-      setAvailableModels(KNOWN_MODELS[localConfig.provider] || []);
-      setIsMixedContent(false);
-    }
-  }, [localConfig.provider, localConfig.baseUrl]);
-
+  
   useEffect(() => {
     setTestResult(null);
   }, [localConfig.provider, localConfig.baseUrl, localConfig.apiKey]);
 
-  const fetchOllamaModels = async () => {
-    if (!localConfig.baseUrl) return;
-    setIsLoadingModels(true);
+  const loadModelsForProvider = async (currentConfig: AIConfig) => {
+      const { provider, apiKey, baseUrl } = currentConfig;
+      
+      setIsLoadingModels(true);
+      setAvailableModels([]); // Clear old models
+
+      if (provider === 'ollama') {
+          await fetchOllamaModels(currentConfig);
+      } else if (['openai', 'groq', 'custom', 'anthropic', 'gemini'].includes(provider)) {
+          // Require key/URL before fetching
+          if ((provider !== 'custom' && !apiKey) || (provider === 'custom' && !baseUrl)) {
+              setIsLoadingModels(false);
+              setAvailableModels(KNOWN_MODELS[provider] || []); // Show fallback if available
+              return;
+          }
+          
+          const service = new LLMService(currentConfig);
+          const result = await service.verifyConnection();
+
+          if (result.success && result.models) {
+              setAvailableModels(result.models);
+              // If current model is not in the new list, or no model is set, auto-select the first one.
+              if (!result.models.includes(currentConfig.modelName) && result.models.length > 0) {
+                  setLocalConfig(prev => ({ ...prev, modelName: result.models![0] }));
+              }
+          } else {
+             // On failure, fallback to known models if any
+             setAvailableModels(KNOWN_MODELS[provider] || []);
+          }
+      }
+      setIsLoadingModels(false);
+  };
+
+
+  const fetchOllamaModels = async (currentConfig: AIConfig) => {
+    if (!currentConfig.baseUrl) {
+      setIsLoadingModels(false);
+      return;
+    };
     try {
-      const service = new LLMService(localConfig);
+      const service = new LLMService(currentConfig);
       const result = await service.verifyConnection();
       if (result.success) {
-          const cleanUrl = localConfig.baseUrl.replace(/\/$/, '').replace('localhost', '127.0.0.1');
+          const cleanUrl = currentConfig.baseUrl.replace(/\/$/, '').replace('localhost', '1227.0.0.1');
           const res = await fetch(`${cleanUrl}/api/tags`);
           const data: OllamaTagsResponse = await res.json();
-          setAvailableModels(data.models.map(m => m.name));
+          const models = data.models.map(m => m.name);
+          setAvailableModels(models);
+           if (!models.includes(currentConfig.modelName) && models.length > 0) {
+              setLocalConfig(prev => ({ ...prev, modelName: models[0] }));
+           }
       } else {
-          setAvailableModels(['llama3', 'mistral', 'gemma', 'qwen']);
+          setAvailableModels(KNOWN_MODELS['ollama'] || ['llama3']); // Fallback
       }
     } catch (error) {
       console.warn("Failed to fetch Ollama models:", error);
-      setAvailableModels(['llama3', 'mistral', 'gemma', 'qwen']);
-    } finally {
-      setIsLoadingModels(false);
+      setAvailableModels(KNOWN_MODELS['ollama'] || ['llama3']); // Fallback
     }
   };
 
   const handleTestConnection = async () => {
     setIsTesting(true);
     setTestResult(null);
+    setIsLoadingModels(true);
+
     const service = new LLMService(localConfig);
     const result = await service.verifyConnection();
     setTestResult(result);
+
+    if (result.success && result.models) {
+        setAvailableModels(result.models);
+        if (!result.models.includes(localConfig.modelName) && result.models.length > 0) {
+            setLocalConfig(prev => ({ ...prev, modelName: result.models![0] }));
+        }
+    }
     setIsTesting(false);
+    setIsLoadingModels(false);
   };
 
   const handleSave = () => {
@@ -120,6 +172,7 @@ export const AISettingsModal: React.FC = () => {
 
   const needsApiKey = ['openai', 'anthropic', 'gemini', 'groq', 'custom'].includes(localConfig.provider);
   const needsBaseUrl = ['ollama', 'custom'].includes(localConfig.provider);
+  const isApiProvider = ['openai', 'groq', 'custom', 'anthropic', 'gemini'].includes(localConfig.provider);
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
@@ -158,7 +211,10 @@ export const AISettingsModal: React.FC = () => {
               ].map((provider) => (
                 <button
                   key={provider.id}
-                  onClick={() => setLocalConfig({ ...localConfig, provider: provider.id as any, modelName: '' })}
+                  onClick={() => {
+                    setLocalConfig({ ...DEFAULT_AI_CONFIG, provider: provider.id as any });
+                    setAvailableModels(KNOWN_MODELS[provider.id] || []);
+                  }}
                   className={`flex flex-col items-center justify-center gap-2 p-3 rounded-lg border transition-all ${
                     localConfig.provider === provider.id
                       ? 'bg-emerald-900/20 border-emerald-600 text-emerald-400'
@@ -176,19 +232,7 @@ export const AISettingsModal: React.FC = () => {
             
             {needsBaseUrl && (
                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                        <label className="text-sm font-medium text-gray-300">{localConfig.provider === 'ollama' ? 'Ollama' : 'Custom'} Base URL</label>
-                        {localConfig.provider === 'ollama' && (
-                          <button 
-                              onClick={fetchOllamaModels}
-                              className="text-xs text-emerald-500 hover:text-emerald-400 flex items-center gap-1"
-                              disabled={isLoadingModels}
-                          >
-                              <RefreshCw className={`w-3 h-3 ${isLoadingModels ? 'animate-spin' : ''}`} />
-                              Refresh Models
-                          </button>
-                        )}
-                    </div>
+                    <label className="text-sm font-medium text-gray-300">{localConfig.provider === 'ollama' ? 'Ollama' : 'Custom'} Base URL</label>
                     <Input
                         value={localConfig.baseUrl}
                         onChange={(e) => setLocalConfig({ ...localConfig, baseUrl: e.target.value })}
@@ -216,7 +260,7 @@ export const AISettingsModal: React.FC = () => {
                         type="password"
                         value={localConfig.apiKey}
                         onChange={(e) => setLocalConfig({ ...localConfig, apiKey: e.target.value })}
-                        placeholder={localConfig.provider === 'custom' ? "Optional, e.g. for Hugging Face" : "sk-..."}
+                        placeholder={localConfig.provider === 'custom' ? "Optional, e.g. for Hugging Face" : "Enter key to load models..."}
                     />
                 </div>
             )}
@@ -232,20 +276,21 @@ export const AISettingsModal: React.FC = () => {
                                 setIsModelListOpen(true);
                             }}
                             onFocus={() => setIsModelListOpen(true)}
-                            placeholder={localConfig.provider === 'ollama' ? "llama3" : "gpt-4o"}
+                            placeholder={isLoadingModels ? "Loading models..." : "Select or type a model"}
                             className="pr-10"
+                            disabled={isLoadingModels}
                         />
                         <div 
                             className="absolute right-2 top-2.5 text-gray-500 cursor-pointer hover:text-gray-300"
                             onClick={() => setIsModelListOpen(!isModelListOpen)}
                         >
-                            <ChevronsUpDown className="w-4 h-4" />
+                            {isLoadingModels ? <RefreshCw className="w-4 h-4 animate-spin"/> : <ChevronsUpDown className="w-4 h-4" />}
                         </div>
                     </div>
 
-                    {isModelListOpen && availableModels.length > 0 && (
+                    {isModelListOpen && (
                         <div className="absolute z-10 w-full mt-1 bg-[#222] border border-[#333] rounded-lg shadow-xl max-h-48 overflow-y-auto">
-                            {availableModels
+                            {availableModels.length > 0 ? availableModels
                                 .filter(m => m.toLowerCase().includes((localConfig.modelName || '').toLowerCase()))
                                 .map((model) => (
                                 <button
@@ -259,12 +304,16 @@ export const AISettingsModal: React.FC = () => {
                                     <span>{model}</span>
                                     {localConfig.modelName === model && <Check className="w-3 h-3 text-emerald-500" />}
                                 </button>
-                            ))}
+                            )) : (
+                                <div className="px-3 py-2 text-sm text-gray-500">
+                                    {isApiProvider ? "No models found. Check API key." : "No models available."}
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
                  {localConfig.provider === 'custom' && (
-                    <p className="text-xs text-gray-500 pt-1">For any OpenAI-compatible API (e.g., Hugging Face Inference, local models via LM Studio, etc.).</p>
+                    <p className="text-xs text-gray-500 pt-1">For any OpenAI-compatible API. Key is optional for local models.</p>
                 )}
             </div>
 
@@ -275,7 +324,7 @@ export const AISettingsModal: React.FC = () => {
                         variant="secondary" 
                         size="sm" 
                         onClick={handleTestConnection}
-                        disabled={isTesting}
+                        disabled={isTesting || (isApiProvider && !localConfig.apiKey && localConfig.provider !== 'custom')}
                         className="h-7 text-xs"
                     >
                         {isTesting ? 'Verifying...' : 'Test Connection'}
@@ -304,4 +353,11 @@ export const AISettingsModal: React.FC = () => {
       </div>
     </div>
   );
+};
+
+const DEFAULT_AI_CONFIG: AIConfig = {
+  provider: 'ollama',
+  baseUrl: 'http://127.0.0.1:11434',
+  modelName: 'llama3',
+  apiKey: '',
 };

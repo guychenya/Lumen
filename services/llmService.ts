@@ -27,9 +27,9 @@ export class LLMService {
   }
 
   /**
-   * Verifies if the current configuration is valid and reachable.
+   * Verifies if the current configuration is valid and returns available models on success.
    */
-  async verifyConnection(): Promise<{ success: boolean; message: string }> {
+  async verifyConnection(): Promise<{ success: boolean; message: string; models?: string[] }> {
     const { provider, apiKey, baseUrl } = this.config;
 
     if (provider === 'ollama') {
@@ -38,7 +38,11 @@ export class LLMService {
       if (mixedContentError) return { success: false, message: mixedContentError };
       try {
         const res = await this.fetchOllamaTags(cleanBaseUrl);
-        if (res.ok) return { success: true, message: 'Connected to Ollama successfully.' };
+        if (res.ok) {
+          const data = await res.json();
+          const models = data.models.map((m: any) => m.name);
+          return { success: true, message: 'Connected to Ollama successfully.', models };
+        }
         return { success: false, message: `Ollama connected but returned error: ${res.status}` };
       } catch (error: any) {
         let msg = error instanceof Error ? error.message : String(error);
@@ -53,7 +57,11 @@ export class LLMService {
       if (!apiKey) return { success: false, message: 'API Key is required.' };
       try {
         const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
-        if (res.ok) return { success: true, message: 'Gemini Key is valid.' };
+        if (res.ok) {
+           const data = await res.json();
+           const models = data.models.map((m: any) => m.name.replace('models/', ''));
+           return { success: true, message: 'Gemini Key is valid.', models };
+        }
         return { success: false, message: `Gemini Error: ${res.statusText}` };
       } catch (e: any) {
         return { success: false, message: `Network Error: ${e.message}` };
@@ -66,14 +74,17 @@ export class LLMService {
             const res = await fetch('https://api.anthropic.com/v1/models', {
                 headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' }
             });
-            if (res.ok) return { success: true, message: 'Anthropic Key is valid.' };
+            if (res.ok) {
+                const data = await res.json();
+                const models = data.data.map((m: any) => m.id);
+                return { success: true, message: 'Anthropic Key is valid.', models };
+            }
             return { success: false, message: `Anthropic Error: ${res.status}` };
         } catch (e: any) {
-            return { success: false, message: `Anthropic strictly blocks browser requests (CORS). This key might be valid but can't be tested here.` };
+            return { success: false, message: `Anthropic may block browser requests (CORS). This key might be valid but can't be tested here.` };
         }
     }
 
-    // Handle all OpenAI-compatible APIs (OpenAI, Groq, Custom)
     if (provider === 'openai' || provider === 'groq' || provider === 'custom') {
         let endpoint = '';
         if (provider === 'openai') endpoint = 'https://api.openai.com/v1/models';
@@ -87,12 +98,16 @@ export class LLMService {
         
         try {
             const headers: HeadersInit = {};
-            if (apiKey && apiKey.toLowerCase() !== 'na') {
+            if (apiKey && apiKey.toLowerCase() !== 'na' && apiKey.toLowerCase() !== '') {
                 headers['Authorization'] = `Bearer ${apiKey}`;
             }
 
             const res = await fetch(endpoint, { headers });
-            if (res.ok) return { success: true, message: `${provider.charAt(0).toUpperCase() + provider.slice(1)} API is valid.` };
+            if (res.ok) {
+                const data = await res.json();
+                const models = data.data.map((m: any) => m.id).sort();
+                return { success: true, message: `${provider.charAt(0).toUpperCase() + provider.slice(1)} API is valid.`, models };
+            }
             const errorText = await res.text();
             return { success: false, message: `${provider} Error: ${res.status} ${res.statusText} - ${errorText.slice(0, 100)}` };
         } catch (e: any) {
@@ -173,7 +188,7 @@ export class LLMService {
             if (!endpoint) throw new Error("Invalid endpoint for OpenAI-compatible provider.");
 
             const headers: HeadersInit = { 'Content-Type': 'application/json' };
-            if (apiKey && apiKey.toLowerCase() !== 'na') {
+            if (apiKey && apiKey.toLowerCase() !== 'na' && apiKey.toLowerCase() !== '') {
                 headers['Authorization'] = `Bearer ${apiKey}`;
             }
 
