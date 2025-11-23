@@ -21,6 +21,13 @@ import {
 } from 'lucide-react';
 import { LLMService } from '../services/llmService';
 
+const DEFAULT_AI_CONFIG: AIConfig = {
+  provider: 'ollama',
+  baseUrl: 'http://127.0.0.1:11434',
+  modelName: 'llama3',
+  apiKey: '',
+};
+
 // Fallback models if API fetch fails before user interaction
 const KNOWN_MODELS: Record<string, string[]> = {
   openai: ['gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo'],
@@ -127,7 +134,7 @@ export const AISettingsModal: React.FC = () => {
       const service = new LLMService(currentConfig);
       const result = await service.verifyConnection();
       if (result.success) {
-          const cleanUrl = currentConfig.baseUrl.replace(/\/$/, '').replace('localhost', '1227.0.0.1');
+          const cleanUrl = currentConfig.baseUrl.replace(/\/$/, '').replace('localhost', '127.0.0.1');
           const res = await fetch(`${cleanUrl}/api/tags`);
           const data: OllamaTagsResponse = await res.json();
           const models = data.models.map(m => m.name);
@@ -353,11 +360,4 @@ export const AISettingsModal: React.FC = () => {
       </div>
     </div>
   );
-};
-
-const DEFAULT_AI_CONFIG: AIConfig = {
-  provider: 'ollama',
-  baseUrl: 'http://127.0.0.1:11434',
-  modelName: 'llama3',
-  apiKey: '',
 };

@@ -1,9 +1,11 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Mic, Square, Sparkles, X, Wand2, AlertCircle, RefreshCw, Activity } from 'lucide-react';
 import { AudioVisualizer } from './AudioVisualizer';
 import { Button } from './ui/Button';
 import { useAI } from '../context/AIContext';
 import { LLMService } from '../services/llmService';
+import { ChatMessage } from '../types';
 
 interface Props {
   isOpen: boolean;
@@ -192,30 +194,34 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
     setAiResponse(''); 
     const service = new LLMService(config);
     
-    // Updated prompt to avoid hallucinating todo lists
-    const prompt = `
-      I have recorded the following voice note:
-      "${textToProcess}"
-
-      Your task is to transcribe and lightly format this text into Markdown.
-      Rules:
-      1. Correct basic grammar and spelling mistakes.
-      2. If the user is clearly dictating a structure (like "Heading: Plan"), use Markdown headers (#).
-      3. If the user is listing items, use bullet points (-).
-      4. DO NOT create a checklist or todo list unless the user explicitly says "create a checklist" or "todo".
-      5. If the text is short or conversational, just return it as a clean paragraph.
-      6. Output ONLY the Markdown text.
-    `;
+    // Refined prompt using a system message for better context and formatting.
+    // This improves analysis and can mitigate context length issues.
+    const messages: ChatMessage[] = [
+      {
+        role: 'system',
+        content: `You are an expert at formatting raw transcribed text into clean Markdown.
+- Correct basic grammar and spelling mistakes.
+- Use Markdown headers (#) for dictated topics or sections.
+- Use bullet points (-) for lists of items.
+- DO NOT use checklists (- [ ]) unless the user explicitly says "checklist" or "todo".
+- If the text is short or conversational, return it as a clean paragraph.
+- Your entire output should be only the formatted Markdown content. Do not add any extra commentary.`
+      },
+      {
+        role: 'user',
+        content: textToProcess
+      }
+    ];
 
     try {
         let fullResult = '';
-        const generator = service.streamResponse([{ role: 'user', content: prompt }]);
+        const generator = service.streamResponse(messages);
         for await (const chunk of generator) {
             fullResult += chunk;
             setAiResponse(prev => prev + chunk); // Live update
         }
         
-        // Allow user to read the summary briefly
+        // Allow user to read the summary briefly before closing
         setTimeout(() => {
             onInsert(fullResult);
             onClose();
@@ -223,7 +229,8 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
 
     } catch (e) {
         setStage('error');
-        setErrorMsg("AI Processing Failed. Please check settings.");
+        // The error from the stream is already formatted, so we can display it directly.
+        setErrorMsg(aiResponse || "AI Processing Failed. Please check your settings.");
     }
   };
 
@@ -304,7 +311,7 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
             </div>
 
             {errorMsg && (
-                <div className="p-3 bg-red-900/20 border border-red-500/50 text-red-300 rounded-lg flex items-center gap-2 animate-in slide-in-from-top-2">
+                <div className="p-3 bg-red-900/20 border border-red-500/50 text-red-300 rounded-lg flex items-start gap-2 animate-in slide-in-from-top-2">
                     <AlertCircle className="w-4 h-4 shrink-0" /> 
                     <span className="text-sm font-medium">{errorMsg}</span>
                 </div>
