@@ -2,11 +2,28 @@
 export const parseMarkdown = (text: string): string => {
   if (!text) return '';
 
-  // Sanitize input to prevent basic XSS (simplified)
-  let html = text
+  // 1. Basic sanitization (prevent script/onclick but allow structural HTML)
+  // We'll temporarily protect known safe complex tags (iframe, video) by encoding them uniquely
+  let html = text;
+
+  // Protect Videos/Iframes from basic sanitization
+  const replacements: { id: string, val: string }[] = [];
+  html = html.replace(/(<iframe[\s\S]*?<\/iframe>|<video[\s\S]*?<\/video>)/gim, (match) => {
+      const id = `__MEDIA_${Math.random().toString(36).substr(2, 9)}__`;
+      replacements.push({ id, val: match });
+      return id;
+  });
+
+  // Standard Sanitize for the rest
+  html = html
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
+
+  // Restore Protected Media
+  replacements.forEach(rep => {
+      html = html.replace(rep.id, rep.val);
+  });
 
   // Headers
   html = html.replace(/^### (.*$)/gim, '<h3 class="text-xl font-bold mt-4 mb-2 text-emerald-400">$1</h3>');
@@ -31,6 +48,11 @@ export const parseMarkdown = (text: string): string => {
 
   // Lists (Bullet)
   html = html.replace(/^\- (.*$)/gim, '<li class="ml-4 list-disc marker:text-emerald-500">$1</li>');
+  
+  // Lists (Checkboxes) - [ ] or [x]
+  html = html.replace(/^\[ \] (.*$)/gim, '<li class="flex items-center gap-2"><input type="checkbox" disabled class="mr-2 accent-emerald-500 h-4 w-4 rounded border-gray-600 bg-[#222]"> <span class="text-gray-300">$1</span></li>');
+  html = html.replace(/^\[x\] (.*$)/gim, '<li class="flex items-center gap-2"><input type="checkbox" checked disabled class="mr-2 accent-emerald-500 h-4 w-4 rounded border-gray-600 bg-[#222]"> <span class="text-gray-500 line-through">$1</span></li>');
+
   // Wrap consecutive lis in ul (simple regex approach)
   html = html.replace(/((<li.*>.*<\/li>\n?)+)/gim, '<ul class="my-4 space-y-1">$1</ul>');
 
@@ -56,8 +78,8 @@ export const parseMarkdown = (text: string): string => {
   // Paragraphs (newlines to <br> or <p>)
   // Simple logic: double newline is new paragraph
   html = html.replace(/\n\n/g, '</p><p class="mb-4">');
-  // Wrap content in initial p if not starting with block level
-  if (!html.startsWith('<')) {
+  // Wrap content in initial p if not starting with block level or HTML tags we know
+  if (!html.trim().startsWith('<')) {
       html = '<p class="mb-4">' + html + '</p>';
   }
 

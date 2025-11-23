@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { AIProvider, useAI } from './context/AIContext';
 import { NotesProvider, useNotes } from './context/NotesContext';
 import { AISettingsModal } from './components/AISettingsModal';
@@ -13,7 +13,8 @@ import { ChatMessage } from './types';
 import { 
   Settings, Sparkles, Plus, FileText, ChevronRight, MoreHorizontal, Zap,
   Bold, Italic, List, PenLine, Trash2, Edit2, Image as ImageIcon, 
-  Table as TableIcon, Download, Upload, File, FileCode, Printer, ChevronDown, Mic
+  Table as TableIcon, Download, Upload, File, FileCode, Printer, ChevronDown, Mic,
+  Heading1, Heading2, Heading3, ListOrdered, CheckSquare, Quote, Code, Minus, Video, Play, Type
 } from 'lucide-react';
 
 const EditorWorkspace = () => {
@@ -34,6 +35,135 @@ const EditorWorkspace = () => {
   const headerTitleRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Helper for inserting HTML
+  const insertHtml = (html: string) => {
+    document.execCommand('insertHTML', false, html);
+  };
+  
+  const execFormat = (command: string, value?: string) => {
+    document.execCommand(command, false, value);
+    editorRef.current?.focus();
+  };
+
+  const insertVideo = (url: string) => {
+    let html = '';
+    if (url.includes('youtube.com') || url.includes('youtu.be')) {
+        const videoId = url.split('v=')[1]?.split('&')[0] || url.split('/').pop();
+        html = `<div class="aspect-video my-6"><iframe src="https://www.youtube.com/embed/${videoId}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen class="w-full h-[400px] rounded-xl border border-[#333] shadow-lg"></iframe></div><p><br/></p>`;
+    } else {
+        html = `<video src="${url}" controls class="w-full rounded-xl border border-[#333] shadow-lg my-6"></video><p><br/></p>`;
+    }
+    insertHtml(html);
+  };
+
+  // Define commands with access to component scope (for refs)
+  const slashCommands: SlashCommand[] = useMemo(() => [
+      {
+        id: 'text',
+        label: 'Text',
+        icon: Type,
+        description: 'Start writing with plain text',
+        action: () => execFormat('formatBlock', 'P')
+      },
+      {
+        id: 'h1',
+        label: 'Heading 1',
+        icon: Heading1,
+        description: 'Big section heading',
+        action: () => execFormat('formatBlock', 'H1')
+      },
+      {
+        id: 'h2',
+        label: 'Heading 2',
+        icon: Heading2,
+        description: 'Medium section heading',
+        action: () => execFormat('formatBlock', 'H2')
+      },
+      {
+        id: 'h3',
+        label: 'Heading 3',
+        icon: Heading3,
+        description: 'Small section heading',
+        action: () => execFormat('formatBlock', 'H3')
+      },
+      {
+        id: 'bullet',
+        label: 'Bullet List',
+        icon: List,
+        description: 'Create a simple bulleted list',
+        action: () => execFormat('insertUnorderedList')
+      },
+      {
+        id: 'numbered',
+        label: 'Numbered List',
+        icon: ListOrdered,
+        description: 'Create a numbered list',
+        action: () => execFormat('insertOrderedList')
+      },
+      {
+        id: 'todo',
+        label: 'To-Do List',
+        icon: CheckSquare,
+        description: 'Track tasks with a checklist',
+        action: () => insertHtml('<ul class="my-2 space-y-1"><li><input type="checkbox" class="mr-2 accent-emerald-500 h-4 w-4 rounded border-gray-600 bg-[#222]"> Todo item</li></ul><p><br/></p>')
+      },
+      {
+        id: 'image-upload',
+        label: 'Image Upload',
+        icon: Upload,
+        description: 'Upload an image from your device',
+        action: () => fileInputRef.current?.click()
+      },
+      {
+        id: 'image-url',
+        label: 'Image (URL)',
+        icon: ImageIcon,
+        description: 'Embed an image via link',
+        action: () => {
+            const url = prompt("Enter Image URL:");
+            if(url) execFormat('insertImage', url);
+        }
+      },
+      {
+        id: 'video',
+        label: 'Video',
+        icon: Video,
+        description: 'Embed a video from URL or YouTube',
+        action: () => {
+            const url = prompt("Enter Video URL (YouTube or MP4):");
+            if(url) insertVideo(url);
+        }
+      },
+      {
+        id: 'table',
+        label: 'Table',
+        icon: TableIcon,
+        description: 'Add a simple 2x2 table',
+        action: () => insertHtml('<table class="border-collapse w-full my-6 text-sm"><thead><tr><th class="border border-[#333] p-3 bg-[#1A1A1A] text-left text-emerald-500">Header 1</th><th class="border border-[#333] p-3 bg-[#1A1A1A] text-left text-emerald-500">Header 2</th></tr></thead><tbody><tr><td class="border border-[#333] p-3">Cell 1</td><td class="border border-[#333] p-3">Cell 2</td></tr></tbody></table><p><br/></p>')
+      },
+      {
+        id: 'quote',
+        label: 'Quote',
+        icon: Quote,
+        description: 'Capture a quote',
+        action: () => insertHtml('<blockquote class="border-l-4 border-emerald-500 pl-4 italic my-6 bg-[#1A1A1A] py-3 rounded-r text-gray-300">Quote here</blockquote><p><br/></p>')
+      },
+      {
+        id: 'code',
+        label: 'Code Block',
+        icon: Code,
+        description: 'Capture a code snippet',
+        action: () => insertHtml('<pre class="bg-[#111] p-4 rounded-lg border border-[#333] font-mono text-sm text-gray-300 my-6 shadow-inner overflow-x-auto"><code>// Code here</code></pre><p><br/></p>')
+      },
+      {
+        id: 'divider',
+        label: 'Divider',
+        icon: Minus,
+        description: 'Visually divide blocks',
+        action: () => execFormat('insertHorizontalRule')
+      }
+  ], []);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (slashMenuOpen) {
         // Let the menu handle arrows and enter
@@ -47,10 +177,10 @@ const EditorWorkspace = () => {
            const range = selection.getRangeAt(0);
            const rect = range.getBoundingClientRect();
            
-           // Calculate absolute position including scroll
+           // Calculate fixed position based on viewport
            setSlashMenuPos({
-               top: rect.top + window.scrollY + 24, // Place below cursor
-               left: rect.left + window.scrollX
+               top: rect.bottom + 10, 
+               left: rect.left
            });
            setSlashMenuOpen(true);
        }
@@ -108,12 +238,6 @@ const EditorWorkspace = () => {
 
   const handleDiscard = () => {
       setGeneratedText("");
-  };
-
-  // Formatting Actions
-  const execFormat = (command: string, value?: string) => {
-    document.execCommand(command, false, value);
-    editorRef.current?.focus();
   };
 
   const insertImage = () => {
@@ -402,6 +526,7 @@ const EditorWorkspace = () => {
         <SlashCommandMenu 
             isOpen={slashMenuOpen} 
             position={slashMenuPos} 
+            commands={slashCommands}
             onSelect={executeSlashCommand}
             onClose={() => setSlashMenuOpen(false)}
         />

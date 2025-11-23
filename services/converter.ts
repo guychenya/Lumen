@@ -52,9 +52,17 @@ export const htmlToMarkdown = (html: string): string => {
             md += '\n';
             break;
         case 'li':
-            md += '- ';
-            traverseChildren(el);
-            md += '\n';
+            // Check for checkbox
+            const input = el.querySelector('input[type="checkbox"]');
+            if (input) {
+                const checked = (input as HTMLInputElement).checked;
+                const text = el.textContent?.trim() || '';
+                md += checked ? `[x] ${text}\n` : `[ ] ${text}\n`;
+            } else {
+                md += '- ';
+                traverseChildren(el);
+                md += '\n';
+            }
             break;
         case 'blockquote':
             md += '\n> ';
@@ -76,6 +84,14 @@ export const htmlToMarkdown = (html: string): string => {
             break;
         case 'a':
             md += `[${el.textContent}](${el.getAttribute('href')})`;
+            break;
+        case 'iframe':
+            // Preserve YouTube/Embed iframes
+            md += `\n${el.outerHTML}\n`;
+            break;
+        case 'video':
+            // Preserve video tags
+            md += `\n${el.outerHTML}\n`;
             break;
         case 'hr':
             md += '\n---\n';
