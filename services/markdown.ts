@@ -7,11 +7,11 @@ export const parseMarkdown = (text: string): string => {
   let html = text;
 
   // Protect Videos/Iframes/Details and their wrappers from basic sanitization
-  const replacements: { id: string, val: string }[] = [];
-  
   // Matches <div class="aspect-video...">...</div> OR <details>...</details> OR standalone video/iframe
   // We use specific regexes to capture these blocks including their content
   const protectionRegex = /(<div class="aspect-video[^"]*">[\s\S]*?(?:<iframe|<video)[\s\S]*?(?:<\/iframe>|<\/video>)[\s\S]*?<\/div>|<iframe[\s\S]*?<\/iframe>|<video[\s\S]*?<\/video>|<details[\s\S]*?<\/details>)/gim;
+  
+  const replacements: { id: string, val: string }[] = [];
   
   html = html.replace(protectionRegex, (match) => {
       const id = `__MEDIA_${Math.random().toString(36).substr(2, 9)}__`;
@@ -41,7 +41,8 @@ export const parseMarkdown = (text: string): string => {
   html = html.replace(/\*(.*)\*/gim, '<em>$1</em>');
 
   // Images: ![alt](url)
-  html = html.replace(/!\[(.*?)\]\((.*?)\)/gim, '<img src="$2" alt="$1" class="rounded-lg max-w-full my-4 border border-[#333]" />');
+  // Improved regex to better handle base64 data which might contain special chars but not closing parens generally
+  html = html.replace(/!\[([^\]]*)\]\(([^)]*)\)/gim, '<img src="$2" alt="$1" class="rounded-lg max-w-full my-4 border border-[#333]" />');
 
   // Links: [text](url)
   html = html.replace(/\[(.*?)\]\((.*?)\)/gim, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-emerald-400 hover:underline">$1</a>');

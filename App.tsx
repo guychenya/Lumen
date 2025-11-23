@@ -620,7 +620,7 @@ const EditorWorkspace = () => {
                >
                  <textarea 
                     ref={textareaRef}
-                    className="flex-1 w-full bg-transparent text-gray-300 font-mono text-sm p-6 resize-none focus:outline-none custom-scrollbar leading-relaxed"
+                    className="flex-1 w-full bg-transparent text-gray-300 font-mono text-sm p-6 resize-none focus:outline-none custom-scrollbar leading-relaxed break-words whitespace-pre-wrap"
                     placeholder="# Start typing your note here... (Type / for commands)"
                     value={localContent}
                     onChange={(e) => handleContentChange(e.target.value)}
