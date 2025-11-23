@@ -331,6 +331,11 @@ const EditorWorkspace = () => {
             // The SlashCommandMenu component handles the logic via window listeners
             return;
         }
+        // If any other character is typed, close the menu.
+        // This prevents the menu from getting "stuck" and blocking the Enter key.
+        if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.length === 1) {
+            setSlashMenuOpen(false);
+        }
     }
 
     if (e.key === '/') {
