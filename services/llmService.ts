@@ -1,7 +1,6 @@
 
 
 import { AIConfig, ChatMessage } from '../types';
-// FIX: Import GoogleGenAI to use the official Gemini API SDK.
 import { GoogleGenAI } from '@google/genai';
 
 export class LLMService {
@@ -13,7 +12,6 @@ export class LLMService {
 
   private getCleanBaseUrl(url?: string): string {
     if (!url) return 'http://127.0.0.1:11434';
-    // Force 127.0.0.1 to avoid IPv6 issues with 'localhost' on some systems
     let clean = url.replace(/\/$/, '');
     if (clean.includes('localhost')) {
         clean = clean.replace('localhost', '127.0.0.1');
@@ -32,17 +30,14 @@ export class LLMService {
    * Verifies if the current configuration is valid and reachable.
    */
   async verifyConnection(): Promise<{ success: boolean; message: string }> {
-    const { provider, apiKey } = this.config;
+    const { provider, apiKey, baseUrl } = this.config;
 
-    // --- OLLAMA ---
     if (provider === 'ollama') {
-      const baseUrl = this.getCleanBaseUrl(this.config.baseUrl);
-      
-      const mixedContentError = this.checkMixedContent(baseUrl);
+      const cleanBaseUrl = this.getCleanBaseUrl(baseUrl);
+      const mixedContentError = this.checkMixedContent(cleanBaseUrl);
       if (mixedContentError) return { success: false, message: mixedContentError };
-
       try {
-        const res = await this.fetchOllamaTags(baseUrl);
+        const res = await this.fetchOllamaTags(cleanBaseUrl);
         if (res.ok) return { success: true, message: 'Connected to Ollama successfully.' };
         return { success: false, message: `Ollama connected but returned error: ${res.status}` };
       } catch (error: any) {
@@ -54,22 +49,8 @@ export class LLMService {
       }
     }
 
-    // --- CLOUD PROVIDERS ---
-    if (!apiKey) return { success: false, message: 'API Key is required.' };
-
-    if (provider === 'openai') {
-      try {
-        const res = await fetch('https://api.openai.com/v1/models', {
-          headers: { 'Authorization': `Bearer ${apiKey}` }
-        });
-        if (res.ok) return { success: true, message: 'OpenAI Key is valid.' };
-        return { success: false, message: `OpenAI Error: ${res.status} ${res.statusText}` };
-      } catch (e: any) {
-        return { success: false, message: `Network Error (CORS?): ${e.message}` };
-      }
-    }
-
     if (provider === 'gemini') {
+      if (!apiKey) return { success: false, message: 'API Key is required.' };
       try {
         const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
         if (res.ok) return { success: true, message: 'Gemini Key is valid.' };
@@ -80,6 +61,7 @@ export class LLMService {
     }
 
     if (provider === 'anthropic') {
+         if (!apiKey) return { success: false, message: 'API Key is required.' };
          try {
             const res = await fetch('https://api.anthropic.com/v1/models', {
                 headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' }
@@ -88,6 +70,33 @@ export class LLMService {
             return { success: false, message: `Anthropic Error: ${res.status}` };
         } catch (e: any) {
             return { success: false, message: `Anthropic strictly blocks browser requests (CORS). This key might be valid but can't be tested here.` };
+        }
+    }
+
+    // Handle all OpenAI-compatible APIs (OpenAI, Groq, Custom)
+    if (provider === 'openai' || provider === 'groq' || provider === 'custom') {
+        let endpoint = '';
+        if (provider === 'openai') endpoint = 'https://api.openai.com/v1/models';
+        if (provider === 'groq') endpoint = 'https://api.groq.com/openai/v1/models';
+        if (provider === 'custom') {
+            if (!baseUrl) return { success: false, message: 'Base URL is required for Custom provider.'};
+            endpoint = `${this.getCleanBaseUrl(baseUrl)}/v1/models`;
+        }
+        
+        if (!apiKey && provider !== 'custom') return { success: false, message: 'API Key is required.' };
+        
+        try {
+            const headers: HeadersInit = {};
+            if (apiKey && apiKey.toLowerCase() !== 'na') {
+                headers['Authorization'] = `Bearer ${apiKey}`;
+            }
+
+            const res = await fetch(endpoint, { headers });
+            if (res.ok) return { success: true, message: `${provider.charAt(0).toUpperCase() + provider.slice(1)} API is valid.` };
+            const errorText = await res.text();
+            return { success: false, message: `${provider} Error: ${res.status} ${res.statusText} - ${errorText.slice(0, 100)}` };
+        } catch (e: any) {
+            return { success: false, message: `Network Error (CORS?): ${e.message}` };
         }
     }
 
@@ -113,30 +122,28 @@ export class LLMService {
     }
   }
 
-  /**
-   * Real streaming implementation
-   */
+  private getOpenAICompatibleEndpoint(): string {
+      const { provider, baseUrl } = this.config;
+      if (provider === 'openai') return 'https://api.openai.com/v1/chat/completions';
+      if (provider === 'groq') return 'https://api.groq.com/openai/v1/chat/completions';
+      if (provider === 'custom') return `${this.getCleanBaseUrl(baseUrl)}/v1/chat/completions`;
+      return ''; // Should not happen
+  }
+
   async *streamResponse(messages: ChatMessage[]): AsyncGenerator<string, void, unknown> {
     const { provider, baseUrl, apiKey, modelName } = this.config;
-    const model = modelName || (provider === 'ollama' ? 'llama3' : 'gpt-4o');
+    const model = modelName || 'llama3'; // Default model
 
     try {
         if (provider === 'ollama') {
             const cleanUrl = this.getCleanBaseUrl(baseUrl);
-            const targetUrl = `${cleanUrl}/api/chat`;
-
             const mixedContentError = this.checkMixedContent(cleanUrl);
             if (mixedContentError) throw new Error(mixedContentError);
 
-            const body = JSON.stringify({ model, messages, stream: true });
-            const headers = { 'Content-Type': 'application/json' };
-            
-            const response = await fetch(targetUrl, {
+            const response = await fetch(`${cleanUrl}/api/chat`, {
                 method: 'POST',
-                headers,
-                body,
-                mode: 'cors',
-                credentials: 'omit'
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model, messages, stream: true }),
             });
             
             if (!response.body) throw new Error('No response body');
@@ -148,10 +155,8 @@ export class LLMService {
                 const { done, value } = await reader.read();
                 if (done) break;
                 buffer += decoder.decode(value, { stream: true });
-                
                 const lines = buffer.split('\n');
                 buffer = lines.pop() || ''; 
-
                 for (const line of lines) {
                     if (!line.trim()) continue;
                     try {
@@ -163,13 +168,18 @@ export class LLMService {
             }
         } 
         
-        else if (provider === 'openai') {
-            const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        else if (['openai', 'groq', 'custom'].includes(provider)) {
+            const endpoint = this.getOpenAICompatibleEndpoint();
+            if (!endpoint) throw new Error("Invalid endpoint for OpenAI-compatible provider.");
+
+            const headers: HeadersInit = { 'Content-Type': 'application/json' };
+            if (apiKey && apiKey.toLowerCase() !== 'na') {
+                headers['Authorization'] = `Bearer ${apiKey}`;
+            }
+
+            const response = await fetch(endpoint, {
                 method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiKey}`
-                },
+                headers,
                 body: JSON.stringify({ model, messages, stream: true })
             });
 
@@ -202,17 +212,15 @@ export class LLMService {
             }
         }
 
-        // FIX: Replaced manual fetch with @google/genai SDK for robustness and adherence to guidelines.
         else if (provider === 'gemini') {
             if (!apiKey) throw new Error('Gemini API key is required.');
-
             const ai = new GoogleGenAI({ apiKey });
             
             let systemInstruction: string | undefined;
             const chatMessages = messages.filter(m => {
                 if (m.role === 'system' && !systemInstruction) {
                     systemInstruction = m.content;
-                    return false; // remove from chat messages
+                    return false;
                 }
                 return m.role === 'user' || m.role === 'assistant';
             });
@@ -230,9 +238,7 @@ export class LLMService {
 
             for await (const chunk of responseStream) {
                 const text = chunk.text;
-                if (text) {
-                    yield text;
-                }
+                if (text) yield text;
             }
         }
         

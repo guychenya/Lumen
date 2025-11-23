@@ -15,15 +15,18 @@ import {
   RefreshCw, 
   ChevronsUpDown,
   Check,
-  ShieldAlert
+  ShieldAlert,
+  Rabbit,
+  Cpu
 } from 'lucide-react';
 import { LLMService } from '../services/llmService';
 
 const KNOWN_MODELS: Record<string, string[]> = {
   openai: ['gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo', 'gpt-4'],
   anthropic: ['claude-3-5-sonnet-latest', 'claude-3-opus-latest', 'claude-3-haiku-20240307'],
-  // FIX: Updated deprecated Gemini models to recommended versions.
   gemini: ['gemini-2.5-flash', 'gemini-3-pro-preview'],
+  groq: ['llama3-8b-8192', 'gemma-7b-it', 'mixtral-8x7b-32768'],
+  custom: [],
   ollama: [] 
 };
 
@@ -115,7 +118,8 @@ export const AISettingsModal: React.FC = () => {
 
   if (!isSettingsOpen) return null;
 
-  const needsApiKey = localConfig.provider !== 'ollama';
+  const needsApiKey = ['openai', 'anthropic', 'gemini', 'groq', 'custom'].includes(localConfig.provider);
+  const needsBaseUrl = ['ollama', 'custom'].includes(localConfig.provider);
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
@@ -143,12 +147,14 @@ export const AISettingsModal: React.FC = () => {
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           <div className="space-y-3">
             <label className="text-sm font-medium text-gray-300">Select Provider</label>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
               {[
                 { id: 'ollama', label: 'Ollama', icon: Server },
                 { id: 'openai', label: 'OpenAI', icon: Key },
                 { id: 'anthropic', label: 'Anthropic', icon: Key },
                 { id: 'gemini', label: 'Gemini', icon: Key },
+                { id: 'groq', label: 'Groq', icon: Rabbit },
+                { id: 'custom', label: 'Custom', icon: Cpu },
               ].map((provider) => (
                 <button
                   key={provider.id}
@@ -168,23 +174,25 @@ export const AISettingsModal: React.FC = () => {
 
           <div className="p-5 rounded-xl border border-[#2A2A2A] bg-[#181818] space-y-5">
             
-            {localConfig.provider === 'ollama' && (
+            {needsBaseUrl && (
                  <div className="space-y-2">
                     <div className="flex justify-between">
-                        <label className="text-sm font-medium text-gray-300">Ollama Base URL</label>
-                        <button 
-                            onClick={fetchOllamaModels}
-                            className="text-xs text-emerald-500 hover:text-emerald-400 flex items-center gap-1"
-                            disabled={isLoadingModels}
-                        >
-                            <RefreshCw className={`w-3 h-3 ${isLoadingModels ? 'animate-spin' : ''}`} />
-                            Refresh Models
-                        </button>
+                        <label className="text-sm font-medium text-gray-300">{localConfig.provider === 'ollama' ? 'Ollama' : 'Custom'} Base URL</label>
+                        {localConfig.provider === 'ollama' && (
+                          <button 
+                              onClick={fetchOllamaModels}
+                              className="text-xs text-emerald-500 hover:text-emerald-400 flex items-center gap-1"
+                              disabled={isLoadingModels}
+                          >
+                              <RefreshCw className={`w-3 h-3 ${isLoadingModels ? 'animate-spin' : ''}`} />
+                              Refresh Models
+                          </button>
+                        )}
                     </div>
                     <Input
                         value={localConfig.baseUrl}
                         onChange={(e) => setLocalConfig({ ...localConfig, baseUrl: e.target.value })}
-                        placeholder="http://127.0.0.1:11434"
+                        placeholder={localConfig.provider === 'ollama' ? "http://127.0.0.1:11434" : "https://api.example.com"}
                     />
                     {isMixedContent && (
                         <div className="flex gap-2 p-3 rounded bg-red-500/20 border border-red-500/50 text-red-200 text-xs items-start">
@@ -208,7 +216,7 @@ export const AISettingsModal: React.FC = () => {
                         type="password"
                         value={localConfig.apiKey}
                         onChange={(e) => setLocalConfig({ ...localConfig, apiKey: e.target.value })}
-                        placeholder="sk-..."
+                        placeholder={localConfig.provider === 'custom' ? "Optional, e.g. for Hugging Face" : "sk-..."}
                     />
                 </div>
             )}
@@ -255,6 +263,9 @@ export const AISettingsModal: React.FC = () => {
                         </div>
                     )}
                 </div>
+                 {localConfig.provider === 'custom' && (
+                    <p className="text-xs text-gray-500 pt-1">For any OpenAI-compatible API (e.g., Hugging Face Inference, local models via LM Studio, etc.).</p>
+                )}
             </div>
 
             <div className="pt-4 border-t border-[#2A2A2A]">

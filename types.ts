@@ -1,5 +1,5 @@
 
-export type AIProviderId = 'ollama' | 'openai' | 'anthropic' | 'gemini';
+export type AIProviderId = 'ollama' | 'openai' | 'anthropic' | 'gemini' | 'groq' | 'custom';
 export type ConnectionStatus = 'connected' | 'checking' | 'disconnected';
 
 export interface AIConfig {
