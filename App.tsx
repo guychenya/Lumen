@@ -85,6 +85,19 @@ const EditorWorkspace = () => {
   const imageFileInputRef = useRef<HTMLInputElement>(null);
   const mdFileInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const renameTriggered = useRef<string | null>(null);
+
+  // Effect to handle focusing the title input for renaming
+  useEffect(() => {
+    if (renameTriggered.current && activeNoteId === renameTriggered.current) {
+        if (headerTitleRef.current) {
+            headerTitleRef.current.focus();
+            headerTitleRef.current.select();
+        }
+        renameTriggered.current = null;
+    }
+  }, [activeNoteId]);
+
 
   // --- HTML/MD State Sync ---
   // We treat activeNote.content as the Source of Truth.
@@ -136,6 +149,18 @@ const EditorWorkspace = () => {
     setIsDragging(false);
     document.removeEventListener('mousemove', handleMouseMove);
     document.removeEventListener('mouseup', handleMouseUp);
+  };
+
+  // --- Note Actions ---
+  const handleRenameClick = (noteId: string) => {
+    renameTriggered.current = noteId;
+    setActiveNoteId(noteId);
+  };
+
+  const handleDeleteClick = (noteId: string) => {
+    if (window.confirm('Are you sure you want to delete this note? This action cannot be undone.')) {
+        deleteNote(noteId);
+    }
   };
 
   // Helper to insert text at cursor
@@ -487,18 +512,35 @@ const EditorWorkspace = () => {
         <div className="flex-1 p-3 space-y-1 overflow-y-auto custom-scrollbar">
            <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Notes</div>
            {notes.map(note => (
-               <button 
-                    key={note.id}
-                    onClick={() => setActiveNoteId(note.id)}
-                    className={`w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors ${
-                        activeNoteId === note.id 
-                        ? 'bg-[#1C1C1C] text-white border border-[#333]' 
-                        : 'text-gray-400 hover:bg-[#1A1A1A] hover:text-gray-200'
-                    }`}
-               >
-                  <FileText className={`w-4 h-4 ${activeNoteId === note.id ? 'text-emerald-500' : 'text-gray-500'}`} />
-                  <span className="truncate">{note.title || "Untitled Note"}</span>
-               </button>
+               <div key={note.id} className="relative group flex items-center">
+                    <button 
+                        onClick={() => setActiveNoteId(note.id)}
+                        className={`w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors text-left ${
+                            activeNoteId === note.id 
+                            ? 'bg-[#1C1C1C] text-white border border-[#333]' 
+                            : 'text-gray-400 hover:bg-[#1A1A1A] hover:text-gray-200'
+                        }`}
+                    >
+                        <FileText className={`w-4 h-4 shrink-0 ${activeNoteId === note.id ? 'text-emerald-500' : 'text-gray-500'}`} />
+                        <span className="truncate flex-1">{note.title || "Untitled Note"}</span>
+                    </button>
+                    <div className="absolute right-2 top-0 bottom-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                        <button 
+                            onClick={() => handleRenameClick(note.id)}
+                            className="p-1 text-gray-400 hover:text-white hover:bg-[#2A2A2A] rounded"
+                            title="Rename note"
+                        >
+                            <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button 
+                            onClick={() => handleDeleteClick(note.id)}
+                            className="p-1 text-red-500/70 hover:text-red-500 hover:bg-red-500/10 rounded"
+                            title="Delete note"
+                        >
+                            <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                    </div>
+               </div>
            ))}
         </div>
 
@@ -608,6 +650,7 @@ const EditorWorkspace = () => {
                             className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-300 hover:bg-[#333] hover:text-white"
                             onClick={() => {
                                 headerTitleRef.current?.focus();
+                                headerTitleRef.current?.select();
                                 setIsMenuOpen(false);
                             }}
                         >
@@ -616,7 +659,7 @@ const EditorWorkspace = () => {
                         <button 
                             className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-[#333] border-t border-[#333]"
                             onClick={() => {
-                                if (activeNote) deleteNote(activeNote.id);
+                                if (activeNote) handleDeleteClick(activeNote.id);
                                 setIsMenuOpen(false);
                             }}
                         >
