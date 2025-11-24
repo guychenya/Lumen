@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { AIProvider, useAI } from './context/AIContext';
 import { NotesProvider, useNotes } from './context/NotesContext';
 import { useTheme } from './context/ThemeContext';
@@ -101,31 +101,24 @@ const EditorWorkspace = () => {
 
 
   // --- HTML/MD State Sync & Editor Filtering ---
-  // `localContent` is what the user SEES in the editor.
-  // It's a filtered version of `activeNote.content` to hide image reference definitions.
-  const [localContent, setLocalContent] = useState("");
   const imageRefRegex = /^\s*\[img_.*?\]: data:image\/.*$/gm;
 
-
-  useEffect(() => {
-    if (activeNote) {
-        let contentToDisplay = activeNote.content;
-        const isLikelyHtml = /^\s*<[^>]+>/i.test(contentToDisplay);
-        if (isLikelyHtml) {
-            contentToDisplay = htmlToMarkdown(contentToDisplay);
-        }
-        
-        // Filter out image reference definitions for a cleaner editor view.
-        const contentWithoutImageRefs = contentToDisplay.replace(imageRefRegex, '').trim();
-        
-        setLocalContent(contentWithoutImageRefs);
-    } else {
-        setLocalContent("");
+  // FIX: Removed `localContent` state. The editor's value is now derived directly
+  // from `activeNote.content` using `useMemo`. This creates a single source of
+  // truth and prevents state synchronization bugs that caused the editor to "get stuck".
+  const editorContent = useMemo(() => {
+    if (!activeNote) return "";
+    let contentToDisplay = activeNote.content;
+    const isLikelyHtml = /^\s*<[^>]+>/i.test(contentToDisplay);
+    if (isLikelyHtml) {
+        contentToDisplay = htmlToMarkdown(contentToDisplay);
     }
-  }, [activeNoteId, activeNote]);
+    // Filter out image reference definitions for a cleaner editor view.
+    return contentToDisplay.replace(imageRefRegex, '').trim();
+  }, [activeNote]);
+
 
   const handleContentChange = (val: string) => {
-      setLocalContent(val); // Update local state for immediate feedback
       if (activeNote) {
           // Re-attach the image reference definitions that are visually hidden.
           const imageRefs = activeNote.content.match(imageRefRegex) || [];
@@ -452,13 +445,13 @@ const EditorWorkspace = () => {
 
   // --- AI Actions ---
   const handleAIAction = async (promptPrefix: string) => {
-    if (!localContent) return;
+    if (!editorContent) return;
     
     setIsGenerating(true);
     setGeneratedText(""); 
 
     const service = new LLMService(config);
-    const fullPrompt = `${promptPrefix} for the following text. Output in Markdown format:\n\n${localContent}`;
+    const fullPrompt = `${promptPrefix} for the following text. Output in Markdown format:\n\n${editorContent}`;
     const messages: ChatMessage[] = [{ role: 'user', content: fullPrompt }];
 
     try {
@@ -718,7 +711,7 @@ const EditorWorkspace = () => {
         </div>
 
         {/* Split Editor Area */}
-        <div ref={containerRef} className="flex-1 flex overflow-hidden relative">
+        <div ref={containerRef} className="flex-1 flex overflow-hidden relative print:block print:overflow-visible print:h-auto">
            {activeNote ? (
              <>
                {/* Left: Markdown Input */}
@@ -727,13 +720,13 @@ const EditorWorkspace = () => {
                        width: viewMode === 'split' ? `${splitPos}%` : viewMode === 'edit' ? '100%' : '0%',
                        display: viewMode === 'preview' ? 'none' : 'flex'
                    }}
-                   className="flex flex-col border-r border-gray-200 dark:border-[#222] bg-white dark:bg-[#111] transition-none"
+                   className="flex flex-col border-r border-gray-200 dark:border-[#222] bg-white dark:bg-[#111] transition-none print:hidden"
                >
                  <textarea 
                     ref={textareaRef}
                     className="flex-1 w-full bg-transparent text-gray-700 dark:text-gray-300 font-mono text-sm p-6 resize-none focus:outline-none custom-scrollbar leading-relaxed break-words whitespace-pre-wrap"
                     placeholder="# Start typing your note here... (Type / for commands)"
-                    value={localContent}
+                    value={editorContent}
                     onChange={(e) => handleContentChange(e.target.value)}
                     onKeyDown={handleKeyDown}
                     onKeyUp={handleKeyUp}
@@ -744,7 +737,7 @@ const EditorWorkspace = () => {
                {/* Resizer Handle */}
                {viewMode === 'split' && (
                   <div 
-                    className="w-2 -ml-1 h-full cursor-col-resize z-50 flex items-center justify-center group hover:bg-emerald-500/10 transition-colors"
+                    className="w-2 -ml-1 h-full cursor-col-resize z-50 flex items-center justify-center group hover:bg-emerald-500/10 transition-colors print:hidden"
                     onMouseDown={startResizing}
                   >
                     <div className="w-0.5 h-8 bg-gray-300 dark:bg-[#333] group-hover:bg-emerald-500 rounded-full transition-colors" />
@@ -758,7 +751,7 @@ const EditorWorkspace = () => {
                        display: viewMode === 'edit' ? 'none' : 'block',
                        pointerEvents: isDragging ? 'none' : 'auto' // Prevent iframe interference while dragging
                    }}
-                   className={`h-full overflow-y-auto custom-scrollbar ${theme === 'light' ? 'bg-dotted-pattern-light' : 'bg-dotted-pattern-dark'}`}
+                   className={`h-full overflow-y-auto custom-scrollbar ${theme === 'light' ? 'bg-dotted-pattern-light' : 'bg-dotted-pattern-dark'} print:w-full print:h-auto print:overflow-visible print:bg-white`}
                >
                     <div 
                         className={`prose ${theme === 'dark' ? 'dark:prose-invert' : ''} max-w-none p-8`}
