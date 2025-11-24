@@ -149,43 +149,65 @@
         background-color: rgba(255,255,255,0.1);
       }
 
-      /* PRINT STYLES (PDF Export) */
+      /* ROBUST PRINT STYLES (PDF Export) */
       @media print {
         @page {
           margin: 1.5cm;
         }
-        body, .dark body {
+
+        body * {
+          visibility: hidden; /* Hide everything by default */
+        }
+
+        /* Make only the preview pane and its children visible */
+        #preview-pane, #preview-pane * {
+          visibility: visible;
+        }
+
+        /* Pull the preview pane out of the flex layout and position it for printing */
+        #preview-pane {
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: 100%;
+          height: auto;
+          overflow: visible;
+          padding: 0;
+          margin: 0;
+          background-image: none !important;
           background-color: white !important;
-          color: black !important;
-          print-color-adjust: exact;
+        }
+        
+        body {
+          background-color: white !important;
           -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
         }
-        .print\:hidden {
-          display: none !important;
+
+        /* Reset prose styles for clean black & white printing */
+        .prose, .dark .prose-invert {
+            color: black !important;
+            max-width: 100% !important;
         }
-        #root { 
-          display: block !important; 
-          height: auto !important;
-          overflow: visible !important;
+        .prose *, .dark .prose-invert * {
+            color: black !important;
         }
-        .prose, .dark .prose-invert { 
-          max-width: 100% !important; 
-          color: black !important;
-          margin: 0 !important;
-          padding: 0 !important;
-        }
-        .prose p, .prose li, .prose h1, .prose h2, .prose h3 {
-          color: black !important;
+        .prose a {
+            text-decoration: underline;
         }
         .prose th, .prose td, .prose pre, .prose blockquote {
-          border-color: #ddd !important;
+            border-color: #ccc !important;
         }
         .prose th {
-          background-color: #f3f4f6 !important;
-          color: black !important;
+            background-color: #eee !important;
         }
-        [contenteditable]:empty::before {
-          display: none !important;
+        .prose pre, .prose code {
+            background-color: #f5f5f5 !important;
+            color: #333 !important;
+            border: 1px solid #ccc;
+        }
+        img {
+            max-width: 100% !important;
         }
       }
     </style>
