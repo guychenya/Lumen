@@ -3,5 +3,6 @@
   "description": "A privacy-first, local-first note taking application with AI capabilities.",
   "requestFramePermissions": [
     "microphone"
-  ]
+  ],
+  "majorCapabilities": []
 }

@@ -80,6 +80,7 @@ const EditorWorkspace = () => {
   // Slash Command State
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
   const [slashMenuPos, setSlashMenuPos] = useState({ top: 0, left: 0 });
+  const [noteToDelete, setNoteToDelete] = useState<string | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const headerTitleRef = useRef<HTMLInputElement>(null);
@@ -161,8 +162,13 @@ const EditorWorkspace = () => {
   };
 
   const handleDeleteClick = (noteId: string) => {
-    if (window.confirm('Are you sure you want to delete this note? This action cannot be undone.')) {
-        deleteNote(noteId);
+    setNoteToDelete(noteId);
+  };
+
+  const confirmDelete = () => {
+    if (noteToDelete) {
+      deleteNote(noteToDelete);
+      setNoteToDelete(null);
     }
   };
 
@@ -820,6 +826,23 @@ const EditorWorkspace = () => {
       )}
       {isExportMenuOpen && (
           <div className="fixed inset-0 z-10 bg-transparent print:hidden" onClick={() => setIsExportMenuOpen(false)} />
+      )}
+
+      {noteToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm print:hidden">
+            <div className="bg-white dark:bg-[#111] border border-gray-200 dark:border-[#333] rounded-xl shadow-2xl p-6 max-w-sm w-full">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Delete Note</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Are you sure you want to delete this note? This action cannot be undone.</p>
+                <div className="flex items-center justify-end gap-3">
+                    <Button variant="ghost" onClick={() => setNoteToDelete(null)}>
+                        Cancel
+                    </Button>
+                    <Button onClick={confirmDelete} className="bg-red-500 hover:bg-red-600 text-white shadow-sm border-transparent">
+                        Delete Note
+                    </Button>
+                </div>
+            </div>
+        </div>
       )}
     </div>
   );
