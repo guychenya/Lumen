@@ -11,7 +11,7 @@ interface NotesContextType {
   addNote: () => void;
   updateNote: (id: string, updates: Partial<Note>) => void;
   deleteNote: (id: string) => void;
-  importNote: (title: string, content: string) => void;
+  importNote: (title: string, content: string, tags?: string[]) => void;
   activeNote: Note | undefined;
 }
 
@@ -68,12 +68,13 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     setActiveNoteId(newNote.id);
   };
   
-  const importNote = (title: string, content: string) => {
+  const importNote = (title: string, content: string, tags?: string[]) => {
     const newNote: Note = {
       id: crypto.randomUUID(),
       title,
       content,
       updatedAt: Date.now(),
+      tags: tags || [],
     };
     setNotes(prevNotes => [newNote, ...prevNotes]);
     setActiveNoteId(newNote.id);

@@ -29,4 +29,5 @@ export interface Note {
   title: string;
   content: string;
   updatedAt: number;
+  tags?: string[];
 }

@@ -9,13 +9,14 @@ import { htmlToMarkdown } from './services/converter';
 import { parseMarkdown } from './services/markdown';
 import { SlashCommandMenu, type SlashCommand } from './components/SlashCommandMenu';
 import { VoiceModeModal } from './components/VoiceModeModal';
+import { AICopilot } from './components/AICopilot';
 import { ChatMessage } from './types';
 import { 
   Settings, Sparkles, Plus, FileText, ChevronRight, MoreHorizontal, Zap,
   Bold, Italic, List, PenLine, Trash2, Edit2, Image as ImageIcon, 
   Table as TableIcon, Download, Upload, File, FileCode, Printer, ChevronDown, Mic,
   Heading1, Heading2, Heading3, ListOrdered, CheckSquare, Quote, Code, Minus, Video, Type,
-  Eye, Columns, Moon, Sun
+  Eye, Columns, Moon, Sun, MessageSquare
 } from 'lucide-react';
 
 // Helper to calculate caret coordinates in a textarea
@@ -71,6 +72,8 @@ const EditorWorkspace = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [isVoiceModeOpen, setIsVoiceModeOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(true);
+  const [activeSelection, setActiveSelection] = useState<{ start: number; end: number; text: string } | null>(null);
   
   // View Mode & Resizing State
   const [viewMode, setViewMode] = useState<ViewMode>('split');
@@ -510,10 +513,64 @@ const EditorWorkspace = () => {
     setIsGenerating(true);
     setGeneratedText(""); 
 
+    // Capture precise highlight if exists
+    let selectedText = "";
+    let start = 0;
+    let end = 0;
+    if (textareaRef.current) {
+        start = textareaRef.current.selectionStart;
+        end = textareaRef.current.selectionEnd;
+        selectedText = textareaRef.current.value.substring(start, end);
+    }
+
+    if (selectedText) {
+        setActiveSelection({ start, end, text: selectedText });
+    } else {
+        setActiveSelection(null);
+    }
+
     const service = new LLMService(config);
 
-    // Split text into chunks of max 8000 characters (approx 2000 tokens) to guarantee
-    // compatibility with tight context limits and free tier tokens-per-minute (TPM) limits on Groq
+    // Context from surrounding documents
+    const otherNotesTitles = notes.filter(n => n.id !== activeNote?.id).map(n => n.title || "Untitled Note").join(', ');
+    const noteTitle = activeNote?.title || "Untitled Note";
+
+    // Build the instruction
+    let fullPrompt = "";
+    if (selectedText) {
+        fullPrompt = `You are editing a document titled "${noteTitle}" in an AI-native workspace named Lumen.
+Other items/notes available in the workspace: [${otherNotesTitles}].
+
+The user has highlighted an explicit section of the document and selected the tool Action: "${promptPrefix}".
+
+--- SURROUNDING DOCUMENT CONTENT FOR CONTEXT ---
+${editorContent}
+------------------------------------------------
+
+--- THE SPECIFIC HIGHLIGHTED TEXT TO PROCESS ---
+${selectedText}
+------------------------------------------------
+
+Instructions:
+1. Process ONLY the HIGHLIGHTED TEXT based on the instruction: "${promptPrefix}".
+2. Maintain complete consistency with the style, tone, and logical context of the surrounding document.
+3. Output ONLY the improved/processed version of that highlighted section. Do not output any markdown wrappers of your entire response, do not rewrite unchanged parts of the document. Return only the final revised text directly.`;
+    } else {
+        fullPrompt = `You are analyzing a document titled "${noteTitle}" in an AI-native workspace named Lumen.
+Other items/notes available in the workspace: [${otherNotesTitles}].
+
+The user selected the tool Action: "${promptPrefix}" on the entire document.
+
+--- FULL DOCUMENT CONTENT ---
+${editorContent}
+-----------------------------
+
+Instructions:
+1. Perform the operation: "${promptPrefix}" on the document.
+2. Return your output in clean Markdown format.`;
+    }
+
+    // Split text into chunks if it is extremely long, otherwise keep it unified
     const chunkText = (text: string, maxChunkSize: number = 8000): string[] => {
       if (text.length <= maxChunkSize) return [text];
       
@@ -527,7 +584,6 @@ const EditorWorkspace = () => {
             chunks.push(currentChunk.trim());
             currentChunk = para;
           } else {
-            // Split huge paragraphs character-by-character if needed
             let remaining = para;
             while (remaining.length > maxChunkSize) {
               chunks.push(remaining.substring(0, maxChunkSize));
@@ -547,19 +603,15 @@ const EditorWorkspace = () => {
       return chunks;
     };
 
-    const chunks = chunkText(editorContent, 8000);
+    const chunks = chunkText(fullPrompt, 8000);
 
     try {
         for (let i = 0; i < chunks.length; i++) {
             const chunk = chunks[i];
-            let chunkPrompt = '';
-            
+            let chunkPrompt = chunk;
             if (chunks.length > 1) {
-                chunkPrompt = `${promptPrefix} for the following text (Part ${i + 1} of ${chunks.length}). Output in Markdown format:\n\n${chunk}`;
-                // Append section visual boundary marker when multi-chunk summaries are streamed
+                chunkPrompt = `${chunk}\n\n(Part ${i + 1} of ${chunks.length})`;
                 setGeneratedText(prev => prev + (prev ? "\n\n" : "") + `### Section ${i + 1}:\n`);
-            } else {
-                chunkPrompt = `${promptPrefix} for the following text. Output in Markdown format:\n\n${chunk}`;
             }
 
             const messages: ChatMessage[] = [{ role: 'user', content: chunkPrompt }];
@@ -577,8 +629,26 @@ const EditorWorkspace = () => {
   };
 
   const handleAIInsert = () => {
-      insertTextAtCursor(`\n\n${generatedText}\n\n`);
+      if (activeSelection && textareaRef.current && activeNote) {
+          const val = textareaRef.current.value;
+          const newVal = val.substring(0, activeSelection.start) + generatedText + val.substring(activeSelection.end);
+          handleContentChange(newVal);
+          
+          setTimeout(() => {
+              textareaRef.current?.focus();
+              const newCursorPos = activeSelection.start + generatedText.length;
+              textareaRef.current?.setSelectionRange(newCursorPos, newCursorPos);
+          }, 0);
+          setActiveSelection(null);
+      } else {
+          insertTextAtCursor(`\n\n${generatedText}\n\n`);
+      }
       setGeneratedText("");
+  };
+
+  const handleAIDiscard = () => {
+      setGeneratedText("");
+      setActiveSelection(null);
   };
 
   const handleExport = (type: 'md' | 'txt' | 'pdf') => {
@@ -613,7 +683,7 @@ const EditorWorkspace = () => {
   };
 
   return (
-    <div className="flex min-h-screen bg-white dark:bg-[#0F0F0F] text-gray-800 dark:text-gray-100 font-sans overflow-hidden">
+    <div className="flex h-screen w-full bg-white dark:bg-[#0F0F0F] text-gray-800 dark:text-gray-100 font-sans overflow-hidden">
       
       {/* Sidebar */}
       <div className="w-64 bg-gray-50 dark:bg-[#111111] border-r border-gray-200 dark:border-[#222] flex flex-col min-w-[250px] shrink-0 print:hidden z-20">
@@ -627,7 +697,7 @@ const EditorWorkspace = () => {
         <div className="flex-1 p-3 space-y-1 overflow-y-auto custom-scrollbar">
            <div className="px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-500 uppercase tracking-wider">Notes</div>
            {notes.map(note => (
-               <div key={note.id} className="relative group flex items-center">
+               <div key={note.id} className="relative group flex items-center w-full">
                     <button 
                         onClick={() => setActiveNoteId(note.id)}
                         className={`w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors text-left ${
@@ -637,7 +707,18 @@ const EditorWorkspace = () => {
                         }`}
                     >
                         <FileText className={`w-4 h-4 shrink-0 ${activeNoteId === note.id ? 'text-emerald-500' : 'text-gray-500 dark:text-gray-500'}`} />
-                        <span className="truncate flex-1">{note.title || "Untitled Note"}</span>
+                        <div className="flex-1 min-w-0">
+                            <span className="truncate block">{note.title || "Untitled Note"}</span>
+                            {note.tags && note.tags.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-0.5 max-w-[150px]">
+                                    {note.tags.map((t, i) => (
+                                        <span key={i} className="text-[9px] px-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 dark:bg-emerald-500/20 rounded font-mono truncate max-w-[60px]">
+                                            #{t}
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                     </button>
                     <div className="absolute right-2 top-0 bottom-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                         <button 
@@ -686,16 +767,52 @@ const EditorWorkspace = () => {
         
         {/* Header */}
         <header className="h-14 border-b border-gray-200 dark:border-[#222] bg-gray-50 dark:bg-[#111111] flex items-center justify-between px-6 shrink-0 print:hidden z-20">
-           <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 w-full mr-4">
+           <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 w-full mr-4 min-w-0">
               <span className="hidden sm:inline shrink-0">My Workspace</span>
-              <ChevronRight className="w-4 h-4 hidden sm:inline shrink-0" />
+              <ChevronRight className="w-4 h-4 hidden sm:inline shrink-0 font-light" />
               <input 
                 ref={headerTitleRef}
-                className="bg-transparent text-gray-900 dark:text-white font-medium focus:outline-none focus:border-b border-gray-400 dark:border-gray-600 min-w-[100px] w-full max-w-md truncate"
+                className="bg-transparent text-gray-900 dark:text-white font-medium focus:outline-none focus:border-b border-gray-400 dark:border-gray-600 min-w-[100px] max-w-[160px] truncate"
                 value={activeNote?.title || ""}
                 onChange={(e) => activeNote && updateNote(activeNote.id, { title: e.target.value })}
                 placeholder="Untitled Note"
               />
+
+              {/* Header Active Note Tags Display */}
+              {activeNote && (
+                <div id="header-tags-list" className="flex items-center gap-1.5 flex-wrap overflow-hidden ml-2 max-h-10 py-1">
+                  {activeNote.tags && activeNote.tags.map((tag, idx) => (
+                    <span key={idx} className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 dark:bg-emerald-500/20 rounded-full border border-emerald-500/10 dark:border-emerald-500/20 hover:scale-105 transition-all">
+                      #{tag}
+                      <button 
+                        onClick={() => {
+                          const updated = activeNote.tags?.filter(t => t !== tag) || [];
+                          updateNote(activeNote.id, { tags: updated });
+                        }}
+                        className="hover:text-red-500 font-bold ml-0.5 leading-none"
+                        title="Remove Tag"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                  <button 
+                    onClick={() => {
+                      const tag = prompt("Add a tag to this note:");
+                      if (tag && tag.trim()) {
+                        const trimmed = tag.trim().toLowerCase();
+                        const current = activeNote.tags || [];
+                        if (!current.includes(trimmed)) {
+                          updateNote(activeNote.id, { tags: [...current, trimmed] });
+                        }
+                      }
+                    }}
+                    className="text-[10px] font-semibold px-2 py-0.5 text-gray-400 hover:text-emerald-600 dark:text-gray-500 dark:hover:text-emerald-400 border border-gray-300 dark:border-[#333] border-dashed rounded-full bg-transparent hover:bg-gray-100 dark:hover:bg-[#1A1A1A] transition-all"
+                  >
+                    + Tag
+                  </button>
+                </div>
+              )}
            </div>
 
            <div className="flex items-center gap-3 shrink-0">
@@ -722,6 +839,20 @@ const EditorWorkspace = () => {
                     className={`p-1.5 rounded transition-all ${viewMode === 'preview' ? 'bg-white dark:bg-[#333] text-emerald-500 dark:text-emerald-400 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
                 >
                     <Eye className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="h-4 w-px bg-gray-300 dark:bg-[#333] mx-1" />
+
+              {/* Copilot Toggle Pattern matching existing box style */}
+              <div className="flex bg-gray-200 dark:bg-[#1A1A1A] rounded-lg p-1 border border-gray-300 dark:border-[#333]">
+                <button 
+                    onClick={() => setChatOpen(!chatOpen)} 
+                    title={chatOpen ? "Close Copilot" : "Open Copilot"}
+                    className={`p-1.5 rounded transition-all flex items-center gap-1 ${chatOpen ? 'bg-white dark:bg-[#333] text-emerald-500 dark:text-emerald-400 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
+                >
+                    <MessageSquare className="w-4 h-4" />
+                    <span className="text-xs font-semibold px-0.5 hidden md:inline">Copilot</span>
                 </button>
               </div>
 
@@ -897,7 +1028,7 @@ const EditorWorkspace = () => {
                             {isGenerating && <span className="inline-block w-1 h-3 bg-emerald-500 ml-1 animate-pulse"/>}
                         </div>
                         <div className="flex gap-2 justify-end pt-2 border-t border-gray-200 dark:border-[#333]">
-                            <Button size="sm" variant="ghost" onClick={() => setGeneratedText("")} disabled={isGenerating} className="h-7 text-xs">Discard</Button>
+                            <Button size="sm" variant="ghost" onClick={handleAIDiscard} disabled={isGenerating} className="h-7 text-xs">Discard</Button>
                             <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 dark:hover:bg-emerald-500 h-7 text-xs" onClick={handleAIInsert} disabled={isGenerating}>Insert</Button>
                         </div>
                     </div>
@@ -906,6 +1037,10 @@ const EditorWorkspace = () => {
            )}
         </div>
       </div>
+
+      {chatOpen && (
+        <AICopilot onClose={() => setChatOpen(false)} />
+      )}
 
       <div className="print:hidden">
         <AISettingsModal />
