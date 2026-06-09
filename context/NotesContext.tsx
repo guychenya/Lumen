@@ -7,8 +7,9 @@ import { Note } from '../types';
 interface NotesContextType {
   notes: Note[];
   activeNoteId: string | null;
-  setActiveNoteId: (id: string) => void;
+  setActiveNoteId: (id: string | null) => void;
   addNote: () => void;
+  addVoiceMemo: (title: string, content: string, audioData?: string, duration?: number, tags?: string[]) => void;
   updateNote: (id: string, updates: Partial<Note>) => void;
   deleteNote: (id: string) => void;
   importNote: (title: string, content: string, tags?: string[]) => void;
@@ -62,10 +63,26 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       title: '',
       content: '',
       updatedAt: Date.now(),
+      type: 'note',
     };
     // Add the new note to the top of the list and make it active.
     setNotes(prevNotes => [newNote, ...prevNotes]);
     setActiveNoteId(newNote.id);
+  };
+
+  const addVoiceMemo = (title: string, content: string, audioData?: string, duration?: number, tags?: string[]) => {
+    const newMemo: Note = {
+      id: crypto.randomUUID(),
+      title: title || `Voice Memo - ${new Date().toLocaleDateString()}`,
+      content,
+      updatedAt: Date.now(),
+      tags: tags || [],
+      type: 'voice',
+      audioData,
+      duration,
+    };
+    setNotes(prevNotes => [newMemo, ...prevNotes]);
+    setActiveNoteId(newMemo.id);
   };
   
   const importNote = (title: string, content: string, tags?: string[]) => {
@@ -75,6 +92,7 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       content,
       updatedAt: Date.now(),
       tags: tags || [],
+      type: 'note',
     };
     setNotes(prevNotes => [newNote, ...prevNotes]);
     setActiveNoteId(newNote.id);
@@ -101,7 +119,7 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const activeNote = notes.find(n => n.id === activeNoteId);
 
   return (
-    <NotesContext.Provider value={{ notes, activeNoteId, setActiveNoteId, addNote, updateNote, deleteNote, importNote, activeNote }}>
+    <NotesContext.Provider value={{ notes, activeNoteId, setActiveNoteId, addNote, addVoiceMemo, updateNote, deleteNote, importNote, activeNote }}>
       {children}
     </NotesContext.Provider>
   );

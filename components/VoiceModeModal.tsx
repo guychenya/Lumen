@@ -3,6 +3,7 @@ import { Mic, Square, Sparkles, X, Wand2, AlertCircle, RefreshCw, Activity } fro
 import { AudioVisualizer } from './AudioVisualizer';
 import { Button } from './ui/Button';
 import { useAI } from '../context/AIContext';
+import { useNotes } from '../context/NotesContext';
 import { LLMService } from '../services/llmService';
 
 interface Props {
@@ -15,6 +16,7 @@ type Stage = 'idle' | 'recording' | 'processing' | 'error';
 
 export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) => {
   const { config } = useAI();
+  const { addVoiceMemo } = useNotes();
   const [stage, setStage] = useState<Stage>('idle');
   const [finalTranscript, setFinalTranscript] = useState('');
   const [interimTranscript, setInterimTranscript] = useState('');
@@ -23,7 +25,15 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
   const [errorMsg, setErrorMsg] = useState('');
   const [isSpeechDetected, setIsSpeechDetected] = useState(false);
   
+  // Custom states for Voice Memos
+  const [saveMode, setSaveMode] = useState<'voice' | 'insert'>('voice');
+  const [audioBase64, setAudioBase64] = useState<string | undefined>(undefined);
+  const [recordDuration, setRecordDuration] = useState(0);
+  
   const recognitionRef = useRef<any>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const durationIntervalRef = useRef<any>(null);
   const shouldBeRecording = useRef(false);
 
   useEffect(() => {
@@ -32,6 +42,8 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
       setInterimTranscript('');
       setAiResponse('');
       setErrorMsg('');
+      setAudioBase64(undefined);
+      setRecordDuration(0);
       shouldBeRecording.current = true;
       startRecording();
     } else {
@@ -42,6 +54,18 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
 
   const cleanupResources = () => {
     shouldBeRecording.current = false;
+    
+    if (durationIntervalRef.current) {
+        clearInterval(durationIntervalRef.current);
+        durationIntervalRef.current = null;
+    }
+    
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        try {
+            mediaRecorderRef.current.stop();
+        } catch (e) { /* ignore */ }
+    }
+    
     if (recognitionRef.current) {
         try {
             recognitionRef.current.onend = null;
@@ -49,6 +73,7 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
         } catch (e) { /* ignore */ }
         recognitionRef.current = null;
     }
+    
     if (mediaStream) {
         mediaStream.getTracks().forEach(track => track.stop());
     }
@@ -92,6 +117,55 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
           stream?.getTracks().forEach(t => t.stop());
           return;
       }
+
+      // Initialize MediaRecorder to save actual voice audio
+      audioChunksRef.current = [];
+      try {
+        const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data && event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
+          }
+        };
+        mediaRecorder.onstop = () => {
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            setAudioBase64(reader.result as string);
+          };
+          reader.readAsDataURL(audioBlob);
+        };
+        mediaRecorder.start();
+        mediaRecorderRef.current = mediaRecorder;
+      } catch (err) {
+        console.warn("Failed to start MediaRecorder with webm. Trying default encoder:", err);
+        try {
+          const mediaRecorder = new MediaRecorder(stream);
+          mediaRecorder.ondataavailable = (event) => {
+            if (event.data && event.data.size > 0) {
+              audioChunksRef.current.push(event.data);
+            }
+          };
+          mediaRecorder.onstop = () => {
+            const audioBlob = new Blob(audioChunksRef.current);
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              setAudioBase64(reader.result as string);
+            };
+            reader.readAsDataURL(audioBlob);
+          };
+          mediaRecorder.start();
+          mediaRecorderRef.current = mediaRecorder;
+        } catch (e) {
+          console.error("Recording raw audio is completely unsupported on this browser:", e);
+        }
+      }
+
+      // Timer counter
+      setRecordDuration(0);
+      durationIntervalRef.current = setInterval(() => {
+        setRecordDuration(prev => prev + 1);
+      }, 1000);
 
       recognition.onresult = (event: any) => {
         if (!shouldBeRecording.current) return;
@@ -157,6 +231,18 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
 
   const handleFinish = () => {
     shouldBeRecording.current = false;
+    
+    if (durationIntervalRef.current) {
+        clearInterval(durationIntervalRef.current);
+        durationIntervalRef.current = null;
+    }
+    
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        try {
+            mediaRecorderRef.current.stop();
+        } catch (e) { /* ignore */ }
+    }
+    
     if (recognitionRef.current) {
         recognitionRef.current.onend = null;
         recognitionRef.current.stop();
@@ -166,7 +252,9 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
     const fullText = (finalTranscript + ' ' + interimTranscript).trim();
     
     setTimeout(() => {
-        cleanupResources();
+        if (mediaStream) {
+            mediaStream.getTracks().forEach(track => track.stop());
+        }
         setMediaStream(null);
         
         if (!fullText) {
@@ -174,7 +262,7 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
             return;
         }
         processWithAI(fullText);
-    }, 200);
+    }, 400); 
   };
 
   const handleRetry = () => {
@@ -192,7 +280,6 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
     setAiResponse(''); 
     const service = new LLMService(config);
     
-    // Updated prompt to avoid hallucinating todo lists
     const prompt = `
       I have recorded the following voice note:
       "${textToProcess}"
@@ -215,9 +302,15 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
             setAiResponse(prev => prev + chunk); // Live update
         }
         
-        // Allow user to read the summary briefly
+        // Save recording based on user choice
         setTimeout(() => {
-            onInsert(fullResult);
+            if (saveMode === 'voice') {
+                const words = fullResult.trim().replace(/[#\n\-\*]/g, ' ').split(/\s+/).filter(Boolean).slice(0, 5).join(' ');
+                const title = words ? `Voice: ${words}...` : `Voice Memo - ${new Date().toLocaleDateString()}`;
+                addVoiceMemo(title, fullResult, audioBase64, recordDuration || 1, ['voice']);
+            } else {
+                onInsert(fullResult);
+            }
             onClose();
         }, 1500);
 
@@ -225,6 +318,12 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
         setStage('error');
         setErrorMsg("AI Processing Failed. Please check settings.");
     }
+  };
+
+  const formatTimer = (secs: number) => {
+     const m = Math.floor(secs / 60);
+     const s = secs % 60;
+     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
   if (!isOpen) return null;
@@ -242,9 +341,9 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
               <div>
                   <h2 className="text-xl font-bold text-gray-900 dark:text-white">Voice Mode</h2>
                   <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-2">
-                      {stage === 'recording' && "Listening..."}
+                      {stage === 'recording' && `Recording: ${formatTimer(recordDuration)}`}
                       {stage === 'recording' && isSpeechDetected && <span className="text-emerald-600 dark:text-emerald-500 text-xs px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-900/30 rounded border border-emerald-200 dark:border-emerald-500/30">Voice Detected</span>}
-                      {stage === 'processing' && "Formatting..."}
+                      {stage === 'processing' && "Formatting with AI..."}
                       {stage === 'error' && "Error occurred"}
                   </p>
               </div>
@@ -264,7 +363,7 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
                                 <Wand2 className="w-8 h-8 animate-spin text-emerald-500" />
                                 <Sparkles className="w-6 h-6 animate-pulse text-purple-500" />
                             </div>
-                            <span className="text-emerald-500 dark:text-emerald-400 font-medium animate-pulse">Formatting Markdown...</span>
+                            <span className="text-emerald-500 dark:text-emerald-400 font-medium animate-pulse">Formatting Markdown Transcript...</span>
                         </>
                    ) : (
                        <div className="text-sm text-gray-500 dark:text-gray-600">Microphone inactive</div>
@@ -275,15 +374,41 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
 
         {/* Content Preview */}
         <div className="p-6 space-y-4">
+            {stage === 'recording' && (
+                <div className="flex items-center gap-6 py-2 px-3 bg-gray-50 dark:bg-[#1a1a1a] rounded-xl border border-gray-200 dark:border-[#2a2a2a] justify-center transition-all animate-in fade-in">
+                    <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Save Recording As:</span>
+                    <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer font-medium select-none">
+                        <input 
+                            type="radio" 
+                            name="saveMode" 
+                            checked={saveMode === 'voice'} 
+                            onChange={() => setSaveMode('voice')}
+                            className="text-emerald-600 focus:ring-emerald-500 border-gray-300 dark:border-gray-700 bg-white dark:bg-[#222]" 
+                        />
+                        <span className={saveMode === 'voice' ? 'text-emerald-600 dark:text-emerald-400 font-bold' : ''}>New Voice Memo doc</span>
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer font-medium select-none">
+                        <input 
+                            type="radio" 
+                            name="saveMode" 
+                            checked={saveMode === 'insert'} 
+                            onChange={() => setSaveMode('insert')}
+                            className="text-emerald-600 focus:ring-emerald-500 border-gray-300 dark:border-gray-700 bg-white dark:bg-[#222]" 
+                        />
+                        <span className={saveMode === 'insert' ? 'text-emerald-600 dark:text-emerald-400 font-bold' : ''}>Insert at cursor</span>
+                    </label>
+                </div>
+            )}
+
             <div className="space-y-2">
                 <div className="flex justify-between items-center">
                     <label className="text-xs font-semibold text-gray-500 dark:text-gray-500 uppercase tracking-wider">
                         {stage === 'processing' ? 'Generating Note' : 'Live Transcript'}
                     </label>
-                    {stage === 'processing' && <span className="text-xs text-emerald-600 dark:text-emerald-500 animate-pulse">Streaming from AI...</span>}
+                    {stage === 'processing' && <span className="text-xs text-purple-600 dark:text-purple-400 animate-pulse">Streaming from AI...</span>}
                 </div>
                 
-                <div className="p-4 bg-gray-100 dark:bg-[#1A1A1A] rounded-xl border border-gray-200 dark:border-[#333] min-h-[120px] max-h-[300px] overflow-y-auto transition-all custom-scrollbar">
+                <div className="p-4 bg-gray-100 dark:bg-[#1A1A1A] rounded-xl border border-gray-200 dark:border-[#333] min-h-[120px] max-h-[220px] overflow-y-auto transition-all custom-scrollbar">
                     {stage === 'processing' ? (
                          <div className="whitespace-pre-wrap text-gray-800 dark:text-gray-200 font-mono text-sm">
                             {aiResponse || 'Thinking...'}
@@ -291,12 +416,12 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
                     ) : (
                         <div className="text-gray-800 dark:text-gray-200 leading-relaxed text-lg font-light">
                              {finalTranscript || interimTranscript ? (
-                                <>
+                                 <>
                                     <span>{finalTranscript}</span>
                                     <span className="text-gray-500 dark:text-gray-500 ml-1">{interimTranscript}</span>
-                                </>
+                                 </>
                              ) : (
-                                <span className="text-gray-500 dark:text-gray-600 italic">Start speaking to capture your thoughts...</span>
+                                <span className="text-gray-500 dark:text-gray-650 italic">Start speaking to capture your thoughts...</span>
                              )}
                         </div>
                     )}
@@ -313,8 +438,8 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
 
         {/* Footer Actions */}
         <div className="p-6 border-t border-gray-200 dark:border-[#222] bg-gray-50 dark:bg-[#161616] flex justify-between items-center">
-             <div className="text-xs text-gray-500 dark:text-gray-500">
-                Lumen will automatically format your speech into Markdown.
+             <div className="text-xs text-gray-500 dark:text-gray-400">
+                Processed audio was automatically chunked and recorded to workspace.
              </div>
 
              <div className="flex gap-3">
@@ -323,7 +448,7 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
                          <RefreshCw className="w-4 h-4 mr-2" /> Retry
                      </Button>
                  ) : stage === 'recording' ? (
-                     <Button onClick={handleFinish} className="bg-red-600 hover:bg-red-700 px-8 py-3 h-auto text-base shadow-lg shadow-red-900/20 text-white">
+                     <Button onClick={handleFinish} className="bg-red-600 hover:bg-red-700 px-8 py-3 h-auto text-base shadow-lg shadow-red-900/20 text-white border-transparent">
                          <Square className="w-4 h-4 mr-2" /> Stop & Format
                      </Button>
                  ) : (

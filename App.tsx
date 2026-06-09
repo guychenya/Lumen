@@ -10,6 +10,7 @@ import { parseMarkdown } from './services/markdown';
 import { SlashCommandMenu, type SlashCommand } from './components/SlashCommandMenu';
 import { VoiceModeModal } from './components/VoiceModeModal';
 import { AICopilot } from './components/AICopilot';
+import { VoiceMemoPlayer } from './components/VoiceMemoPlayer';
 import { ChatMessage } from './types';
 import { 
   Settings, Sparkles, Plus, FileText, ChevronRight, MoreHorizontal, Zap,
@@ -84,6 +85,19 @@ const EditorWorkspace = () => {
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
   const [slashMenuPos, setSlashMenuPos] = useState({ top: 0, left: 0 });
   const [noteToDelete, setNoteToDelete] = useState<string | null>(null);
+
+  // Custom states for filtering notes & voice memos
+  const [sidebarTab, setSidebarTab] = useState<'all' | 'notes' | 'voice'>('all');
+
+  const filteredNotes = useMemo(() => {
+    if (sidebarTab === 'notes') {
+      return notes.filter(n => !n.type || n.type === 'note');
+    }
+    if (sidebarTab === 'voice') {
+      return notes.filter(n => n.type === 'voice');
+    }
+    return notes;
+  }, [notes, sidebarTab]);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const headerTitleRef = useRef<HTMLInputElement>(null);
@@ -693,22 +707,54 @@ Instructions:
             <span>Lumen</span>
           </div>
         </div>
+
+        {/* Sidebar Tabs */}
+        <div className="px-3 pt-2 pb-1 flex items-center gap-1 border-b border-gray-200 dark:border-[#222] bg-gray-100/50 dark:bg-[#161616]/20">
+          {(['all', 'notes', 'voice'] as const).map(tab => (
+            <button
+              key={tab}
+              onClick={() => setSidebarTab(tab)}
+              className={`flex-1 py-1 text-[11px] font-semibold rounded-md capitalize transition-all select-none cursor-pointer border ${
+                sidebarTab === tab
+                  ? 'bg-white dark:bg-[#202020] text-emerald-600 dark:text-emerald-400 shadow-xs border-gray-200 dark:border-[#2f2f2f]'
+                  : 'text-gray-400 dark:text-gray-550 hover:text-gray-700 dark:hover:text-gray-300 border-transparent bg-transparent'
+              }`}
+            >
+              {tab === 'voice' ? 'Voice' : tab}
+            </button>
+          ))}
+        </div>
         
         <div className="flex-1 p-3 space-y-1 overflow-y-auto custom-scrollbar">
-           <div className="px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-500 uppercase tracking-wider">Notes</div>
-           {notes.map(note => (
-               <div key={note.id} className="relative group flex items-center w-full">
-                    <button 
-                        onClick={() => setActiveNoteId(note.id)}
-                        className={`w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors text-left ${
-                            activeNoteId === note.id 
-                            ? 'bg-gray-200 dark:bg-[#1C1C1C] text-gray-900 dark:text-white border border-gray-300 dark:border-[#333]' 
-                            : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#1A1A1A] hover:text-gray-700 dark:hover:text-gray-200'
-                        }`}
-                    >
-                        <FileText className={`w-4 h-4 shrink-0 ${activeNoteId === note.id ? 'text-emerald-500' : 'text-gray-500 dark:text-gray-500'}`} />
+           <div className="px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-500 uppercase tracking-wider">
+             {sidebarTab === 'all' && "All Documents"}
+             {sidebarTab === 'notes' && "Markdown Notes"}
+             {sidebarTab === 'voice' && "Voice Memos"}
+           </div>
+           {filteredNotes.map(note => (
+                <div key={note.id} className="relative group flex items-center w-full">
+                     <button 
+                         onClick={() => setActiveNoteId(note.id)}
+                         className={`w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors text-left ${
+                             activeNoteId === note.id 
+                             ? 'bg-gray-200 dark:bg-[#1C1C1C] text-gray-900 dark:text-white border border-gray-300 dark:border-[#333]' 
+                             : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#1A1A1A] hover:text-gray-700 dark:hover:text-gray-200'
+                         }`}
+                     >
+                        {note.type === 'voice' ? (
+                          <Mic className={`w-4 h-4 shrink-0 ${activeNoteId === note.id ? 'text-purple-500' : 'text-purple-600 dark:text-purple-400'}`} />
+                        ) : (
+                          <FileText className={`w-4 h-4 shrink-0 ${activeNoteId === note.id ? 'text-emerald-500' : 'text-gray-500 dark:text-gray-550'}`} />
+                        )}
                         <div className="flex-1 min-w-0">
-                            <span className="truncate block">{note.title || "Untitled Note"}</span>
+                            <div className="flex items-center justify-between gap-1 w-full">
+                                <span className="truncate block font-semibold">{note.title || "Untitled Note"}</span>
+                                {note.type === 'voice' && note.duration && (
+                                    <span className="text-[10px] text-purple-600 dark:text-purple-400 font-mono font-bold bg-purple-500/10 dark:bg-purple-500/20 px-1 py-0.2 rounded border border-purple-500/10 shrink-0">
+                                        {Math.floor(note.duration / 60)}:{(note.duration % 60).toString().padStart(2, '0')}
+                                    </span>
+                                )}
+                            </div>
                             {note.tags && note.tags.length > 0 && (
                                 <div className="flex flex-wrap gap-1 mt-0.5 max-w-[150px]">
                                     {note.tags.map((t, i) => (
@@ -719,8 +765,8 @@ Instructions:
                                 </div>
                             )}
                         </div>
-                    </button>
-                    <div className="absolute right-2 top-0 bottom-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                     </button>
+                     <div className="absolute right-2 top-0 bottom-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                         <button 
                             onClick={() => handleRenameClick(note.id)}
                             className="p-1 text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-200 dark:hover:bg-[#2A2A2A] rounded"
@@ -735,30 +781,36 @@ Instructions:
                         >
                             <Trash2 className="w-3.5 h-3.5" />
                         </button>
-                    </div>
-               </div>
+                     </div>
+                </div>
            ))}
         </div>
 
         <div className="p-3 border-t border-gray-200 dark:border-[#222] mt-auto space-y-2">
-           <Button 
-             onClick={addNote}
-             className="w-full bg-emerald-600 hover:bg-emerald-700 dark:hover:bg-emerald-500 shadow-lg shadow-emerald-900/20"
-           >
-              <Plus className="w-4 h-4 mr-2" /> New Note
-           </Button>
-           <div className="flex items-center gap-2">
             <Button 
-                variant="secondary"
-                onClick={() => mdFileInputRef.current?.click()}
-                className="w-full"
+              onClick={addNote}
+              className="w-full bg-emerald-600 hover:bg-emerald-700 dark:hover:bg-emerald-500 shadow-lg shadow-emerald-900/20"
             >
-                <Upload className="w-4 h-4 mr-2" /> Import .md
+               <Plus className="w-4 h-4 mr-2" /> New Note
             </Button>
-            <Button variant="secondary" onClick={toggleTheme} className="px-2.5">
-                {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            <Button 
+              onClick={() => setIsVoiceModeOpen(true)}
+              className="w-full bg-purple-600 hover:bg-purple-700 dark:bg-purple-600/35 dark:hover:bg-purple-500 text-white shadow-xs border-transparent"
+            >
+               <Mic className="w-4 h-4 mr-2" /> Record Voice Memo
             </Button>
-           </div>
+            <div className="flex items-center gap-2">
+             <Button 
+                 variant="secondary"
+                 onClick={() => mdFileInputRef.current?.click()}
+                 className="w-full"
+             >
+                 <Upload className="w-4 h-4 mr-2" /> Import .md
+             </Button>
+             <Button variant="secondary" onClick={toggleTheme} className="px-2.5">
+                 {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+             </Button>
+            </div>
         </div>
       </div>
 
@@ -946,53 +998,57 @@ Instructions:
         {/* Split Editor Area */}
         <div ref={containerRef} className="flex-1 flex overflow-hidden relative print:block print:overflow-visible print:h-auto">
            {activeNote ? (
-             <>
-               {/* Left: Markdown Input */}
-               <div 
-                   style={{ 
-                       width: viewMode === 'split' ? `${splitPos}%` : viewMode === 'edit' ? '100%' : '0%',
-                       display: viewMode === 'preview' ? 'none' : 'flex'
-                   }}
-                   className="flex flex-col border-r border-gray-200 dark:border-[#222] bg-white dark:bg-[#111] transition-none print:hidden"
-               >
-                 <textarea 
-                    ref={textareaRef}
-                    className="flex-1 w-full bg-transparent text-gray-700 dark:text-gray-300 font-mono text-sm p-6 resize-none focus:outline-none custom-scrollbar leading-relaxed break-words whitespace-pre-wrap"
-                    placeholder="# Start typing your note here... (Type / for commands)"
-                    value={editorContent}
-                    onChange={(e) => handleContentChange(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    onKeyUp={handleKeyUp}
-                    spellCheck={false}
-                 />
-               </div>
+             activeNote.type === 'voice' ? (
+                <VoiceMemoPlayer note={activeNote} onUpdateNote={updateNote} />
+             ) : (
+               <>
+                 {/* Left: Markdown Input */}
+                 <div 
+                     style={{ 
+                         width: viewMode === 'split' ? `${splitPos}%` : viewMode === 'edit' ? '100%' : '0%',
+                         display: viewMode === 'preview' ? 'none' : 'flex'
+                     }}
+                     className="flex flex-col border-r border-gray-200 dark:border-[#222] bg-white dark:bg-[#111] transition-none print:hidden"
+                 >
+                   <textarea 
+                      ref={textareaRef}
+                      className="flex-1 w-full bg-transparent text-gray-700 dark:text-gray-300 font-mono text-sm p-6 resize-none focus:outline-none custom-scrollbar leading-relaxed break-words whitespace-pre-wrap"
+                      placeholder="# Start typing your note here... (Type / for commands)"
+                      value={editorContent}
+                      onChange={(e) => handleContentChange(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      onKeyUp={handleKeyUp}
+                      spellCheck={false}
+                   />
+                 </div>
 
-               {/* Resizer Handle */}
-               {viewMode === 'split' && (
-                  <div 
-                    className="w-2 -ml-1 h-full cursor-col-resize z-50 flex items-center justify-center group hover:bg-emerald-500/10 transition-colors print:hidden"
-                    onMouseDown={startResizing}
-                  >
-                    <div className="w-0.5 h-8 bg-gray-300 dark:bg-[#333] group-hover:bg-emerald-500 rounded-full transition-colors" />
-                  </div>
-               )}
-
-               {/* Right: Preview */}
-               <div 
-                   id="preview-pane"
-                   style={{ 
-                       width: viewMode === 'split' ? `${100 - splitPos}%` : viewMode === 'preview' ? '100%' : '0%',
-                       display: viewMode === 'edit' ? 'none' : 'block',
-                       pointerEvents: isDragging ? 'none' : 'auto' // Prevent iframe interference while dragging
-                   }}
-                   className={`h-full overflow-y-auto custom-scrollbar ${theme === 'light' ? 'bg-dotted-pattern-light' : 'bg-dotted-pattern-dark'}`}
-               >
+                 {/* Resizer Handle */}
+                 {viewMode === 'split' && (
                     <div 
-                        className={`prose ${theme === 'dark' ? 'dark:prose-invert' : ''} max-w-none p-8`}
-                        dangerouslySetInnerHTML={{ __html: parseMarkdown(activeNote.content) }}
-                    />
-               </div>
-             </>
+                      className="w-2 -ml-1 h-full cursor-col-resize z-50 flex items-center justify-center group hover:bg-emerald-500/10 transition-colors print:hidden"
+                      onMouseDown={startResizing}
+                    >
+                      <div className="w-0.5 h-8 bg-gray-300 dark:bg-[#333] group-hover:bg-emerald-500 rounded-full transition-colors" />
+                    </div>
+                 )}
+
+                 {/* Right: Preview */}
+                 <div 
+                     id="preview-pane"
+                     style={{ 
+                         width: viewMode === 'split' ? `${100 - splitPos}%` : viewMode === 'preview' ? '100%' : '0%',
+                         display: viewMode === 'edit' ? 'none' : 'block',
+                         pointerEvents: isDragging ? 'none' : 'auto' // Prevent iframe interference while dragging
+                     }}
+                     className={`h-full overflow-y-auto custom-scrollbar ${theme === 'light' ? 'bg-dotted-pattern-light' : 'bg-dotted-pattern-dark'}`}
+                 >
+                      <div 
+                          className={`prose ${theme === 'dark' ? 'dark:prose-invert' : ''} max-w-none p-8`}
+                          dangerouslySetInnerHTML={{ __html: parseMarkdown(activeNote.content) }}
+                      />
+                 </div>
+               </>
+             )
            ) : (
                <div className="w-full h-full flex items-center justify-center text-gray-400 dark:text-gray-500">
                    Select a note or create a new one

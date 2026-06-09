@@ -30,4 +30,7 @@ export interface Note {
   content: string;
   updatedAt: number;
   tags?: string[];
+  type?: 'note' | 'voice';
+  audioData?: string; // base64 audio string/data URL
+  duration?: number; // audio duration in seconds
 }

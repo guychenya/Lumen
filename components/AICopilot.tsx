@@ -387,7 +387,7 @@ System Protocol Guidelines:
         )}
 
         {messages.map((msg, idx) => (
-          <div key={idx} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+          <div key={idx} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'} group mb-4`}>
             <span className="text-[10px] text-gray-400 font-medium mb-1 px-1">
               {msg.role === 'user' ? 'You' : 'Copilot'}
             </span>
@@ -401,6 +401,36 @@ System Protocol Guidelines:
                 dangerouslySetInnerHTML={{ __html: msg.role === 'user' ? msg.content : parseMarkdown(cleanResponseText(msg.content)) }}
               />
             </div>
+            {msg.role === 'assistant' && (
+              <div className="flex items-center gap-2 mt-1.5 px-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-200">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const cleaned = cleanResponseText(msg.content).trim();
+                    const words = cleaned.replace(/[#\n\-\*]/g, ' ').split(/\s+/).filter(Boolean).slice(0, 5).join(' ');
+                    const title = words ? `Draft: ${words}...` : "Notes Draft";
+                    importNote(title, cleaned, ['ai-draft']);
+                  }}
+                  className="text-[10px] font-bold px-2 py-1 bg-white hover:bg-gray-100 dark:bg-[#1A1A1A] dark:hover:bg-[#252525] border border-gray-200 dark:border-[#333] text-gray-600 dark:text-gray-300 hover:text-emerald-500 dark:hover:text-emerald-400 rounded-md transition-colors flex items-center gap-1 shadow-xs cursor-pointer select-none"
+                  title="Create a new note with this content"
+                >
+                  <Plus className="w-3 h-3 text-emerald-500" /> Save as Note
+                </button>
+                {activeNoteId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const cleaned = cleanResponseText(msg.content).trim();
+                      updateNote(activeNoteId, { content: (activeNote?.content || '') + '\n\n' + cleaned });
+                    }}
+                    className="text-[10px] font-bold px-2 py-1 bg-white hover:bg-gray-100 dark:bg-[#1A1A1A] dark:hover:bg-[#252525] border border-gray-200 dark:border-[#333] text-gray-600 dark:text-gray-300 hover:text-blue-500 dark:hover:text-blue-400 rounded-md transition-colors flex items-center gap-1 shadow-xs cursor-pointer select-none"
+                    title="Append this text to the active note"
+                  >
+                    <Plus className="w-3 h-3 text-blue-500" /> Append to Current
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         ))}
 
