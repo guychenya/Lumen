@@ -14,7 +14,7 @@ import {
 import { VoiceModeModal } from "./components/VoiceModeModal";
 import { AICopilot } from "./components/AICopilot";
 import { VoiceMemoPlayer } from "./components/VoiceMemoPlayer";
-import { ChatMessage } from "./types";
+import { ChatMessage, Note } from "./types";
 import {
   Settings,
   Sparkles,
@@ -57,6 +57,16 @@ import {
   MessageSquare,
   Sidebar,
   PanelRight,
+  ShieldAlert,
+  Lock,
+  ZoomIn,
+  ZoomOut,
+  LayoutGrid,
+  Presentation,
+  BookOpen,
+  FolderPlus,
+  Maximize2,
+  HelpCircle,
 } from "lucide-react";
 
 // Helper to calculate caret coordinates in a textarea
@@ -203,6 +213,73 @@ const EditorWorkspace = () => {
   const [selectedNoteIds, setSelectedNoteIds] = useState<
     Record<string, boolean>
   >({});
+  const [excludedFolders, setExcludedFolders] = useState<
+    Record<string, boolean>
+  >({});
+
+  // Drag and Drop States
+  const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
+  const [dragOverUnassigned, setDragOverUnassigned] = useState(false);
+
+  // Context Menu State
+  const [contextMenu, setContextMenu] = useState<{
+    show: boolean;
+    x: number;
+    y: number;
+    noteId: string;
+  } | null>(null);
+
+  // Preview Mode and Zoom States
+  const [previewMode, setPreviewMode] = useState<"document" | "html_rich" | "presentation" | "infographic">("document");
+  const [previewZoom, setPreviewZoom] = useState<number>(100);
+  const [htmlTemplate, setHtmlTemplate] = useState<"raw" | "social" | "pitch" | "cyberpunk">("social");
+  const [presentationStyle, setPresentationStyle] = useState<"standard" | "dark" | "retro" | "teal">("standard");
+  const [currentSlideIndex, setCurrentSlideIndex] = useState<number>(0);
+  const [isPresentationFullscreen, setIsPresentationFullscreen] = useState<boolean>(false);
+
+  // Close context menu on global click
+  useEffect(() => {
+    const handleGlobalClick = () => {
+      setContextMenu(null);
+    };
+    window.addEventListener("click", handleGlobalClick);
+    return () => {
+      window.removeEventListener("click", handleGlobalClick);
+    };
+  }, []);
+
+  // Slides Calculator for presentation mode
+  const slides = useMemo(() => {
+    if (!activeNote || !activeNote.content) return [""];
+    const parts = activeNote.content.split(/\n\s*---\s*\n|\n\s*\*\*\*\s*\n/);
+    const filtered = parts.map(s => s.trim()).filter(Boolean);
+    return filtered.length > 0 ? filtered : [activeNote.content];
+  }, [activeNote?.content]);
+
+  // Reset slide index when active note changes
+  useEffect(() => {
+    setCurrentSlideIndex(0);
+  }, [activeNoteId]);
+
+  // Slides keydown navigational helper
+  useEffect(() => {
+    if (previewMode !== "presentation") return;
+    
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "ArrowRight" || e.key === "Space") {
+        setCurrentSlideIndex((prev) => Math.min(slides.length - 1, prev + 1));
+      } else if (e.key === "ArrowLeft") {
+        setCurrentSlideIndex((prev) => Math.max(0, prev - 1));
+      } else if (e.key === "Escape") {
+        setIsPresentationFullscreen(false);
+      }
+    };
+    
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [previewMode, slides.length]);
 
   const toggleSelectNote = (id: string, e?: React.MouseEvent) => {
     if (e) {
@@ -214,37 +291,132 @@ const EditorWorkspace = () => {
     }));
   };
 
+  const toggleExcludeFolder = (folderName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExcludedFolders((prev) => {
+      const isCurrentlyExcluded = !prev[folderName];
+      
+      // If we are excluding this folder, automatically deselect all notes inside it
+      if (isCurrentlyExcluded) {
+        setSelectedNoteIds((prevSelected) => {
+          const nextSelected = { ...prevSelected };
+          const folderNotes = notes.filter((n) => n.folder === folderName);
+          folderNotes.forEach((note) => {
+            delete nextSelected[note.id];
+          });
+          return nextSelected;
+        });
+      }
+      
+      return {
+        ...prev,
+        [folderName]: isCurrentlyExcluded,
+      };
+    });
+  };
+
+  const toggleSelectFolder = (folderName: string) => {
+    if (excludedFolders[folderName]) return;
+    
+    const folderNotes = notes.filter((n) => n.folder === folderName);
+    const allSelected =
+      folderNotes.length > 0 &&
+      folderNotes.every((n) => selectedNoteIds[n.id]);
+
+    setSelectedNoteIds((prev) => {
+      const next = { ...prev };
+      folderNotes.forEach((note) => {
+        if (allSelected) {
+          delete next[note.id];
+        } else {
+          next[note.id] = true;
+        }
+      });
+      return next;
+    });
+  };
+
+  const selectAllWorkspace = () => {
+    setSelectedNoteIds((prev) => {
+      const next = { ...prev };
+      notes.forEach((note) => {
+        const isExcluded = note.folder && excludedFolders[note.folder];
+        if (!isExcluded) {
+          next[note.id] = true;
+        } else {
+          delete next[note.id];
+        }
+      });
+      return next;
+    });
+  };
+
+  const selectAllCurrentTab = () => {
+    setSelectedNoteIds((prev) => {
+      const next = { ...prev };
+      filteredNotes.forEach((note) => {
+        const isExcluded = note.folder && excludedFolders[note.folder];
+        if (!isExcluded) {
+          next[note.id] = true;
+        } else {
+          delete next[note.id];
+        }
+      });
+      return next;
+    });
+  };
+
+  const deselectAll = () => {
+    setSelectedNoteIds({});
+  };
+
   const handleBulkDelete = () => {
-    const idsToDelete = Object.keys(selectedNoteIds).filter(
-      (id) => selectedNoteIds[id],
-    );
+    const idsToDelete = Object.keys(selectedNoteIds).filter((id) => {
+      if (!selectedNoteIds[id]) return false;
+      const note = notes.find((n) => n.id === id);
+      return !(note && note.folder && excludedFolders[note.folder]);
+    });
     if (idsToDelete.length === 0) return;
     setShowBulkDeleteModal(true);
   };
 
   const confirmBulkDelete = () => {
-    const idsToDelete = Object.keys(selectedNoteIds).filter(
-      (id) => selectedNoteIds[id],
-    );
+    const idsToDelete = Object.keys(selectedNoteIds).filter((id) => {
+      if (!selectedNoteIds[id]) return false;
+      const note = notes.find((n) => n.id === id);
+      return !(note && note.folder && excludedFolders[note.folder]);
+    });
     if (idsToDelete.length > 0) {
       deleteMultipleNotes(idsToDelete);
       setSelectedNoteIds({});
+      setExcludedFolders({});
       setIsSelectionMode(false);
     }
     setShowBulkDeleteModal(false);
   };
 
   const hasVisibleNotes = filteredNotes.length > 0;
+  
+  const selectedTotalCount = useMemo(() => {
+    return Object.keys(selectedNoteIds).filter((id) => {
+      if (!selectedNoteIds[id]) return false;
+      const note = notes.find((n) => n.id === id);
+      return !(note && note.folder && excludedFolders[note.folder]);
+    }).length;
+  }, [selectedNoteIds, notes, excludedFolders]);
+
   const selectedVisibleCount = useMemo(() => {
-    return filteredNotes.filter((n) => selectedNoteIds[n.id]).length;
-  }, [filteredNotes, selectedNoteIds]);
+    return filteredNotes.filter((n) => {
+      if (!selectedNoteIds[n.id]) return false;
+      return !(n.folder && excludedFolders[n.folder]);
+    }).length;
+  }, [filteredNotes, selectedNoteIds, excludedFolders]);
 
   const isAllSelected =
     hasVisibleNotes && selectedVisibleCount === filteredNotes.length;
 
   const toggleSelectAll = () => {
     if (isAllSelected) {
-      // Deselect all visible
       setSelectedNoteIds((prev) => {
         const next = { ...prev };
         filteredNotes.forEach((n) => {
@@ -253,11 +425,13 @@ const EditorWorkspace = () => {
         return next;
       });
     } else {
-      // Select all visible
       setSelectedNoteIds((prev) => {
         const next = { ...prev };
         filteredNotes.forEach((n) => {
-          next[n.id] = true;
+          const isExcluded = n.folder && excludedFolders[n.folder];
+          if (!isExcluded) {
+            next[n.id] = true;
+          }
         });
         return next;
       });
@@ -303,6 +477,56 @@ const EditorWorkspace = () => {
     // when the user is actively typing them. Actually, safest not to trim at all.
     return stripped;
   }, [activeNote]);
+
+  // Sections Parser for Bento Infographics mode
+  const parsedSections = useMemo(() => {
+    if (!activeNote || !activeNote.content) return [];
+    
+    const lines = activeNote.content.split("\n");
+    const sections: { title: string; paragraphs: string[]; list_items: string[]; type: 'stats' | 'general' | 'code'; stats?: { num: string; label: string }[] }[] = [];
+    
+    let currentSection: typeof sections[0] = { title: "Overview", paragraphs: [], list_items: [], type: 'general' };
+    
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      
+      // If it's a heading
+      if (trimmed.startsWith("#")) {
+        if (currentSection.paragraphs.length > 0 || currentSection.list_items.length > 0 || currentSection.title !== "Overview") {
+          sections.push(currentSection);
+        }
+        
+        const titleText = trimmed.replace(/^#+\s+/, "");
+        currentSection = {
+          title: titleText,
+          paragraphs: [],
+          list_items: [],
+          type: 'general'
+        };
+      } else if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
+        currentSection.list_items.push(trimmed.replace(/^[-*]\s+/, ""));
+      } else if (trimmed.startsWith("```")) {
+        currentSection.type = 'code';
+      } else {
+        // Statistical highlights: e.g. "99% Success rate" or "15,000 Users" or "Active"
+        const statMatch = trimmed.match(/^([\d,kMBT%+$★#\-/.]+)\s+(.+)$/);
+        if (statMatch) {
+          if (!currentSection.stats) currentSection.stats = [];
+          currentSection.stats.push({ num: statMatch[1], label: statMatch[2] });
+          currentSection.type = 'stats';
+        } else {
+          currentSection.paragraphs.push(trimmed);
+        }
+      }
+    });
+    
+    if (currentSection.paragraphs.length > 0 || currentSection.list_items.length > 0 || currentSection.title !== "Overview" || (currentSection.stats && currentSection.stats.length > 0)) {
+      sections.push(currentSection);
+    }
+    
+    return sections;
+  }, [activeNote?.content]);
 
   const handleContentChange = (val: string) => {
     if (activeNote) {
@@ -680,7 +904,7 @@ const EditorWorkspace = () => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    const fileList = Array.from(files);
+    const fileList = Array.from(files) as any[];
     const mdFiles = fileList.filter(
       (file) => file.name.endsWith(".md") || file.name.endsWith(".markdown"),
     );
@@ -736,7 +960,7 @@ const EditorWorkspace = () => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    const fileList = Array.from(files);
+    const fileList = Array.from(files) as any[];
     const mdFiles = fileList.filter((file) =>
       /\.(md|markdown)$/i.test(file.name),
     );
@@ -1008,11 +1232,13 @@ Instructions:
 
   const renderNoteItem = (note: Note, isInsideFolder = false) => {
     const isSelected = !!selectedNoteIds[note.id];
+    const isFolderExcluded = !!(note.folder && excludedFolders[note.folder]);
 
     const handleItemClick = (e: React.MouseEvent) => {
       if (isSelectionMode) {
         e.preventDefault();
         e.stopPropagation();
+        if (isFolderExcluded) return;
         toggleSelectNote(note.id);
       } else {
         setActiveNoteId(note.id);
@@ -1020,14 +1246,35 @@ Instructions:
     };
 
     return (
-      <div key={note.id} className="relative group flex items-center w-full">
+      <div
+        key={note.id}
+        className="relative group flex items-center w-full"
+        draggable={!isSelectionMode}
+        onDragStart={(e) => {
+          e.dataTransfer.setData("text/plain", note.id);
+          e.dataTransfer.effectAllowed = "move";
+        }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setContextMenu({
+            show: true,
+            x: e.clientX,
+            y: e.clientY,
+            noteId: note.id,
+          });
+        }}
+      >
         <button
           onClick={handleItemClick}
+          disabled={isSelectionMode && isFolderExcluded}
           className={`w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-all text-left ${
             isSelectionMode
-              ? isSelected
-                ? "bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 border border-emerald-500/20 dark:border-emerald-500/30"
-                : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#1A1A1A] hover:text-gray-700 dark:hover:text-gray-200 border border-transparent"
+              ? isFolderExcluded
+                ? "bg-amber-500/[0.03] dark:bg-amber-500/[0.01] border border-dashed border-amber-500/20 dark:border-amber-500/10 cursor-not-allowed text-gray-400 dark:text-gray-500"
+                : isSelected
+                  ? "bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 border border-emerald-500/20 dark:border-emerald-500/30"
+                  : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#1A1A1A] hover:text-gray-700 dark:hover:text-gray-200 border border-transparent"
               : activeNoteId === note.id
                 ? "bg-gray-200 dark:bg-[#1C1C1C] text-gray-900 dark:text-white border border-gray-300 dark:border-[#333]"
                 : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#1A1A1A] hover:text-gray-700 dark:hover:text-gray-200 border border-transparent"
@@ -1037,9 +1284,16 @@ Instructions:
             <div className="shrink-0 flex items-center justify-center">
               <input
                 type="checkbox"
-                checked={isSelected}
-                onChange={() => toggleSelectNote(note.id)}
-                className="w-3.5 h-3.5 accent-emerald-500 text-emerald-600 rounded border-gray-300 dark:border-gray-700 cursor-pointer"
+                checked={isSelected && !isFolderExcluded}
+                disabled={isFolderExcluded}
+                onChange={() => {
+                  if (!isFolderExcluded) {
+                    toggleSelectNote(note.id);
+                  }
+                }}
+                className={`w-3.5 h-3.5 accent-emerald-500 text-emerald-600 rounded border-gray-300 dark:border-gray-700 ${
+                  isFolderExcluded ? "opacity-20 cursor-not-allowed" : "cursor-pointer"
+                }`}
                 onClick={(e) => e.stopPropagation()}
               />
             </div>
@@ -1054,10 +1308,16 @@ Instructions:
           )}
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between gap-1 w-full">
-              <span className="truncate block font-medium text-[13px]">
+              <span className={`truncate block font-medium text-[13px] ${isSelectionMode && isFolderExcluded ? "line-through opacity-70" : ""}`}>
                 {note.title || "Untitled Note"}
               </span>
-              {note.type === "voice" && note.duration && (
+              {isSelectionMode && isFolderExcluded && (
+                <span className="text-[9px] px-1 bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded-sm font-mono flex items-center gap-0.5 shrink-0 animate-pulse border border-amber-500/10">
+                  <Lock className="w-2.5 h-2.5" />
+                  <span>Spared</span>
+                </span>
+              )}
+              {note.type === "voice" && note.duration && (!isSelectionMode || !isFolderExcluded) && (
                 <span className="text-[9px] text-purple-600 dark:text-purple-400 font-mono font-bold bg-purple-500/10 dark:bg-purple-500/20 px-1 py-0.2 rounded border border-purple-500/10 shrink-0">
                   {Math.floor(note.duration / 60)}:
                   {(note.duration % 60).toString().padStart(2, "0")}
@@ -1069,7 +1329,7 @@ Instructions:
                 {note.tags.map((t, i) => (
                   <span
                     key={i}
-                    className="text-[9px] px-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 dark:bg-emerald-500/20 rounded font-mono truncate max-w-[60px]"
+                    className={`text-[9px] px-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 dark:bg-emerald-500/20 rounded font-mono truncate max-w-[60px] ${isSelectionMode && isFolderExcluded ? "opacity-30" : ""}`}
                   >
                     #{t}
                   </span>
@@ -1146,45 +1406,68 @@ Instructions:
         <div className="flex-1 p-3 space-y-1 overflow-y-auto custom-scrollbar">
           {/* Bulk Selection Toolbar */}
           {isSelectionMode ? (
-            <div className="px-3 py-2.5 mb-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 dark:bg-emerald-500/10 flex flex-col gap-2">
+            <div className="px-3 py-2.5 mb-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 dark:bg-emerald-500/10 flex flex-col gap-2.5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-emerald-800 dark:text-emerald-400 flex items-center gap-1.5">
+                <span className="text-xs font-bold text-emerald-800 dark:text-emerald-400 flex items-center gap-1.5">
                   <CheckSquare className="w-3.5 h-3.5" />
-                  <span>{selectedVisibleCount} Selected</span>
+                  <span>{selectedTotalCount} Selected</span>
                 </span>
                 <button
                   onClick={() => {
                     setIsSelectionMode(false);
                     setSelectedNoteIds({});
+                    setExcludedFolders({});
                   }}
-                  className="text-[10px] tracking-wider uppercase font-bold text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white px-2 py-0.5 bg-gray-200/50 dark:bg-[#202020] rounded transition-colors cursor-pointer"
+                  className="text-[10px] tracking-wider uppercase font-extrabold text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white px-2 py-0.5 bg-gray-200/50 dark:bg-[#202020] rounded transition-colors cursor-pointer border border-transparent"
                 >
                   Cancel
                 </button>
               </div>
 
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={toggleSelectAll}
-                  className="flex-1 py-1 px-2 text-[11px] font-semibold rounded-md border border-gray-300 dark:border-[#333] hover:bg-gray-100 dark:hover:bg-[#1A1A1A] transition-all text-gray-700 dark:text-gray-300 cursor-pointer flex items-center justify-center gap-1.5"
-                >
-                  <input
-                    type="checkbox"
-                    checked={isAllSelected}
-                    onChange={toggleSelectAll}
-                    className="w-3 h-3 accent-emerald-500 rounded cursor-pointer pointer-events-none"
-                    readOnly
-                  />
-                  <span>{isAllSelected ? "Deselect All" : "Select All"}</span>
-                </button>
+              {/* Multi-Selection Control Buttons */}
+              <div className="space-y-1">
+                <span className="text-[9px] uppercase font-semibold text-gray-400 dark:text-gray-550 tracking-wider">Select Options:</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={selectAllWorkspace}
+                    title="Select all items across the entire workspace"
+                    className="flex-1 py-1 px-1 text-[10px] font-semibold rounded border border-gray-250 dark:border-[#333] hover:bg-gray-100 dark:hover:bg-[#1C1C1C] transition-all text-gray-700 dark:text-gray-300 cursor-pointer flex items-center justify-center gap-1"
+                  >
+                    <span>Entire Space</span>
+                  </button>
+                  <button
+                    onClick={selectAllCurrentTab}
+                    title={`Select all visible items in the current ${sidebarTab} view`}
+                    className="flex-1 py-1 px-1 text-[10px] font-semibold rounded border border-gray-250 dark:border-[#333] hover:bg-gray-100 dark:hover:bg-[#1C1C1C] transition-all text-gray-700 dark:text-gray-300 cursor-pointer flex items-center justify-center gap-1"
+                  >
+                    <span>Current Tab</span>
+                  </button>
+                  <button
+                    onClick={deselectAll}
+                    disabled={selectedTotalCount === 0}
+                    className="py-1 px-2 text-[10px] font-semibold rounded border border-transparent bg-gray-100 hover:bg-gray-200 dark:bg-[#202020] dark:hover:bg-[#2A2A2A] transition-all text-gray-600 dark:text-gray-400 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed text-center"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
 
+              {/* Action and Protective Indicators */}
+              <div className="space-y-1.5 pt-1.5 border-t border-emerald-500/10">
+                {Object.keys(excludedFolders).filter(f => excludedFolders[f]).length > 0 && (
+                  <div className="flex items-center gap-1 text-[9px] text-amber-600 dark:text-amber-400 bg-amber-500/5 px-2 py-1 rounded font-medium border border-amber-500/10">
+                    <Lock className="w-2.5 h-2.5 text-amber-500 shrink-0" />
+                    <span>{Object.keys(excludedFolders).filter(f => excludedFolders[f]).length} folder(s) excluded/guarded</span>
+                  </div>
+                )}
+                
                 <button
                   onClick={handleBulkDelete}
-                  disabled={selectedVisibleCount === 0}
-                  className="flex-1 py-1 px-2 text-[11px] font-semibold rounded-md bg-red-600 hover:bg-red-700 dark:bg-red-600/30 dark:hover:bg-red-500/50 text-white dark:text-red-300 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  disabled={selectedTotalCount === 0}
+                  className="w-full py-1.5 px-2 text-[11px] font-bold rounded-md bg-red-600 hover:bg-red-700 dark:bg-red-600/35 dark:hover:bg-red-550/60 text-white dark:text-red-200 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-transparent"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                  <span>Delete ({selectedVisibleCount})</span>
+                  <span>Delete Selected ({selectedTotalCount})</span>
                 </button>
               </div>
             </div>
@@ -1198,7 +1481,7 @@ Instructions:
               <button
                 onClick={() => setIsSelectionMode(true)}
                 className="text-[10px] uppercase font-bold tracking-wider text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 px-1.5 py-0.5 hover:bg-emerald-500/10 rounded transition-colors cursor-pointer"
-                title="Manage multiple notes"
+                title="Manage multiple notes and protect folders"
               >
                 Bulk Action
               </button>
@@ -1209,28 +1492,105 @@ Instructions:
             .sort()
             .map((folderName) => {
               const isCollapsed = collapsedFolders[folderName];
+              const isExcluded = !!excludedFolders[folderName];
+              
+              // Count total notes and selected notes inside this folder
+              const folderNotes = groupedNotes.folders[folderName] || [];
+              const selectedInFolder = folderNotes.filter(n => selectedNoteIds[n.id]).length;
+              const allSelected = folderNotes.length > 0 && folderNotes.every(n => selectedNoteIds[n.id]);
+
               return (
-                <div key={folderName} className="space-y-0.5 mb-2">
-                  <button
+                <div
+                  key={folderName}
+                  className={`space-y-0.5 mb-2 rounded-lg border transition-all ${
+                    dragOverFolder === folderName
+                      ? "border-emerald-500/50 bg-emerald-500/[0.03] scale-[1.01] shadow-[0_0_12px_rgba(16,185,129,0.15)] ring-1 ring-emerald-500/20"
+                      : isExcluded
+                        ? "border-amber-500/10 bg-amber-500/[0.01] opacity-90 p-1"
+                        : "border-transparent"
+                  }`}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                  }}
+                  onDragEnter={(e) => {
+                    e.preventDefault();
+                    setDragOverFolder(folderName);
+                  }}
+                  onDragLeave={() => {
+                    setDragOverFolder(null);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragOverFolder(null);
+                    const noteId = e.dataTransfer.getData("text/plain");
+                    if (noteId) {
+                      updateNote(noteId, { folder: folderName });
+                    }
+                  }}
+                >
+                  <div
                     onClick={() => toggleFolder(folderName)}
-                    className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-semibold text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white uppercase tracking-wider select-none bg-gray-100/35 dark:bg-[#161616]/20 rounded-md transition-colors border border-gray-200/50 dark:border-[#222]/30 cursor-pointer"
+                    className={`w-full flex items-center justify-between px-2.5 py-1.5 text-xs font-semibold select-none rounded-md transition-colors border cursor-pointer ${
+                      isExcluded 
+                        ? "bg-amber-500/5 text-amber-805 dark:text-amber-400 border-amber-500/20" 
+                        : "text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white bg-gray-100/35 dark:bg-[#161616]/20 border-gray-200/50 dark:border-[#222]/30"
+                    }`}
                   >
                     <span className="flex items-center gap-1.5 truncate">
-                      <Folder className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400 fill-blue-500/10 shrink-0" />
-                      <span className="truncate">{folderName}</span>
-                      <span className="text-[10px] text-gray-400 dark:text-gray-550 lowercase font-normal shrink-0">
-                        ({groupedNotes.folders[folderName].length})
+                      {isSelectionMode && (
+                        <input
+                          type="checkbox"
+                          checked={allSelected && !isExcluded}
+                          disabled={isExcluded}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            toggleSelectFolder(folderName);
+                          }}
+                          className={`w-3.5 h-3.5 accent-emerald-500 text-emerald-600 rounded shrink-0 ${
+                            isExcluded ? "opacity-20 cursor-not-allowed" : "cursor-pointer"
+                          }`}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      )}
+                      
+                      <Folder className={`w-3.5 h-3.5 shrink-0 ${isExcluded ? "text-amber-500 fill-amber-500/10" : "text-blue-500 dark:text-blue-400 fill-blue-500/10"}`} />
+                      
+                      <span className={`truncate text-[11px] ${isExcluded ? "line-through leading-relaxed opacity-80" : ""}`}>
+                        {folderName}
+                      </span>
+                      
+                      <span className="text-[9px] text-gray-400 dark:text-gray-500 font-normal shrink-0 lowercase">
+                        ({folderNotes.length}{selectedInFolder > 0 && `, ${selectedInFolder} sel`})
                       </span>
                     </span>
-                    {isCollapsed ? (
-                      <ChevronRight className="w-3 h-3 shrink-0" />
-                    ) : (
-                      <ChevronDown className="w-3 h-3 shrink-0" />
-                    )}
-                  </button>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      {isSelectionMode && (
+                        <button
+                          onClick={(e) => toggleExcludeFolder(folderName, e)}
+                          title={isExcluded ? "Cancel Guard / Include in bulk delete" : "Exclude / Protect folder contents"}
+                          className={`px-1 rounded text-[9px] py-0.5 font-extrabold uppercase transition-all flex items-center gap-0.5 cursor-pointer border shrink-0 ${
+                            isExcluded
+                              ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                              : "bg-gray-150 hover:bg-amber-550/10 dark:bg-[#202020] hover:text-amber-500 hover:border-amber-500/20 text-[10px] text-gray-400 border-transparent font-medium"
+                          }`}
+                        >
+                          <ShieldAlert className="w-2.5 h-2.5" />
+                          <span>{isExcluded ? "Spared" : "Protect"}</span>
+                        </button>
+                      )}
+                      
+                      {isCollapsed ? (
+                        <ChevronRight className="w-3 h-3 shrink-0 opacity-60" />
+                      ) : (
+                        <ChevronDown className="w-3 h-3 shrink-0 opacity-60" />
+                      )}
+                    </div>
+                  </div>
                   {!isCollapsed && (
                     <div className="pl-1 space-y-1 animate-in fade-in slide-in-from-top-1 duration-150">
-                      {groupedNotes.folders[folderName].map((note) =>
+                      {folderNotes.map((note) =>
                         renderNoteItem(note, true),
                       )}
                     </div>
@@ -1249,7 +1609,32 @@ Instructions:
             )}
 
           {/* Render Unassigned Notes */}
-          <div className="space-y-1">
+          <div
+            className={`space-y-1 p-1 rounded-lg border transition-all ${
+              dragOverUnassigned
+                ? "border-emerald-500/35 bg-emerald-500/[0.02] border-dashed scale-[0.99]"
+                : "border-transparent"
+            }`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+            }}
+            onDragEnter={(e) => {
+              e.preventDefault();
+              setDragOverUnassigned(true);
+            }}
+            onDragLeave={() => {
+              setDragOverUnassigned(false);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOverUnassigned(false);
+              const noteId = e.dataTransfer.getData("text/plain");
+              if (noteId) {
+                updateNote(noteId, { folder: undefined });
+              }
+            }}
+          >
             {groupedNotes.unassigned.map((note) => renderNoteItem(note, false))}
           </div>
         </div>
@@ -1660,14 +2045,396 @@ Instructions:
                     display: viewMode === "edit" ? "none" : "block",
                     pointerEvents: isDragging ? "none" : "auto", // Prevent iframe interference while dragging
                   }}
-                  className={`h-full overflow-y-auto custom-scrollbar ${theme === "light" ? "bg-dotted-pattern-light" : "bg-dotted-pattern-dark"}`}
+                  className={`h-full flex flex-col relative overflow-hidden bg-white dark:bg-[#111111] ${
+                    theme === "light" ? "bg-dotted-pattern-light" : "bg-dotted-pattern-dark"
+                  }`}
                 >
-                  <div
-                    className={`prose ${theme === "dark" ? "dark:prose-invert" : ""} max-w-none p-8`}
-                    dangerouslySetInnerHTML={{
-                      __html: parseMarkdown(activeNote.content),
-                    }}
-                  />
+                  {/* PREVIEW CONTROLS TOOLBAR */}
+                  <div className="sticky top-0 z-40 flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 border-b border-gray-150 dark:border-[#222] bg-gray-50/95 dark:bg-[#121212]/95 backdrop-blur-md select-none shrink-0 print:hidden shadow-sm">
+                    {/* Render Modes Selector */}
+                    <div className="flex bg-gray-200/80 dark:bg-[#1A1A1A] rounded-lg p-0.5 border border-gray-250 dark:border-[#2b2b2b]">
+                      <button
+                        onClick={() => setPreviewMode("document")}
+                        title="Standard Document View"
+                        className={`p-1.5 px-2.5 rounded-md transition-all text-xs font-semibold flex items-center gap-1 cursor-pointer ${
+                          previewMode === "document"
+                            ? "bg-white dark:bg-[#2A2A2A] text-emerald-600 dark:text-emerald-400 shadow-sm"
+                            : "text-gray-400 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                        }`}
+                      >
+                        <BookOpen className="w-3.5 h-3.5" />
+                        <span>Doc</span>
+                      </button>
+                      <button
+                        onClick={() => setPreviewMode("html_rich")}
+                        title="HTML Designer View"
+                        className={`p-1.5 px-2.5 rounded-md transition-all text-xs font-semibold flex items-center gap-1 cursor-pointer ${
+                          previewMode === "html_rich"
+                            ? "bg-white dark:bg-[#2A2A2A] text-emerald-600 dark:text-emerald-400 shadow-sm"
+                            : "text-gray-400 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                        }`}
+                      >
+                        <Code className="w-3.5 h-3.5" />
+                        <span>HTML</span>
+                      </button>
+                      <button
+                        onClick={() => setPreviewMode("presentation")}
+                        title="Presentation Slides Mode"
+                        className={`p-1.5 px-2.5 rounded-md transition-all text-xs font-semibold flex items-center gap-1 cursor-pointer ${
+                          previewMode === "presentation"
+                            ? "bg-white dark:bg-[#2A2A2A] text-emerald-600 dark:text-emerald-400 shadow-sm"
+                            : "text-gray-400 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                        }`}
+                      >
+                        <Presentation className="w-3.5 h-3.5" />
+                        <span>Slides</span>
+                      </button>
+                      <button
+                        onClick={() => setPreviewMode("infographic")}
+                        title="Bento Grid Infographic"
+                        className={`p-1.5 px-2.5 rounded-md transition-all text-xs font-semibold flex items-center gap-1 cursor-pointer ${
+                          previewMode === "infographic"
+                            ? "bg-white dark:bg-[#2A2A2A] text-emerald-600 dark:text-emerald-400 shadow-sm"
+                            : "text-gray-400 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                        }`}
+                      >
+                        <LayoutGrid className="w-3.5 h-3.5" />
+                        <span>Bento</span>
+                      </button>
+                    </div>
+
+                    {/* Layout Presets (Contextual) */}
+                    {previewMode === "html_rich" && (
+                      <div className="flex items-center gap-1.5 bg-gray-200/50 dark:bg-[#1A1A1A]/80 px-2 py-1 rounded-lg border border-gray-200 dark:border-[#2c2c2c] text-xs">
+                        <span className="text-[10px] uppercase font-bold text-gray-400">Layout:</span>
+                        <select
+                          value={htmlTemplate}
+                          onChange={(e) => setHtmlTemplate(e.target.value as any)}
+                          className="bg-transparent text-gray-700 dark:text-gray-300 font-semibold focus:outline-none cursor-pointer text-xs focus:ring-0"
+                        >
+                          <option value="raw" className="bg-white dark:bg-[#111] text-gray-800 dark:text-white">Canvas Default</option>
+                          <option value="social" className="bg-white dark:bg-[#111] text-gray-800 dark:text-white">Social Promo Card</option>
+                          <option value="pitch" className="bg-white dark:bg-[#111] text-gray-800 dark:text-white">Cream Proposal Pitch</option>
+                          <option value="cyberpunk" className="bg-white dark:bg-[#111] text-gray-800 dark:text-white">Cyber TerminalHUD</option>
+                        </select>
+                      </div>
+                    )}
+
+                    {previewMode === "presentation" && (
+                      <div className="flex items-center gap-1.5 bg-gray-200/50 dark:bg-[#1A1A1A]/80 px-2 py-1 rounded-lg border border-gray-200 dark:border-[#2c2c2c] text-xs">
+                        <span className="text-[10px] uppercase font-bold text-gray-400">Style:</span>
+                        <select
+                          value={presentationStyle}
+                          onChange={(e) => setPresentationStyle(e.target.value as any)}
+                          className="bg-transparent text-gray-700 dark:text-gray-300 font-semibold focus:outline-none cursor-pointer text-xs focus:ring-0"
+                        >
+                          <option value="standard" className="bg-white dark:bg-[#111] text-gray-800 dark:text-white">Standard Light</option>
+                          <option value="dark" className="bg-white dark:bg-[#111] text-gray-800 dark:text-white">Classic Night</option>
+                          <option value="retro" className="bg-white dark:bg-[#111] text-gray-800 dark:text-white">Brutalist Orange</option>
+                          <option value="teal" className="bg-white dark:bg-[#111] text-gray-800 dark:text-white">Teal Wave Gradient</option>
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Zoom Controller */}
+                    <div className="flex items-center gap-2">
+                      <div className="flex bg-gray-200/80 dark:bg-[#1A1A1A] rounded-lg p-0.5 border border-gray-250 dark:border-[#2b2b2b] items-center">
+                        <button
+                          onClick={() => setPreviewZoom(z => Math.max(50, z - 10))}
+                          title="Zoom Out"
+                          className="p-1 px-2 rounded-md hover:bg-white dark:hover:bg-[#2A2A2A] text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white transition-all cursor-pointer"
+                        >
+                          <ZoomOut className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setPreviewZoom(100)}
+                          title="Click to Reset Zoom (100%)"
+                          className="text-[10px] font-mono font-bold text-gray-600 dark:text-gray-400 px-1.5 select-none hover:text-emerald-500 hover:scale-105 transition-all text-center min-w-[40px] cursor-pointer"
+                        >
+                          {previewZoom}%
+                        </button>
+                        <button
+                          onClick={() => setPreviewZoom(z => Math.min(250, z + 10))}
+                          title="Zoom In"
+                          className="p-1 px-2 rounded-md hover:bg-white dark:hover:bg-[#2A2A2A] text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white transition-all cursor-pointer"
+                        >
+                          <ZoomIn className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      {previewMode === "presentation" && (
+                        <button
+                          onClick={() => setIsPresentationFullscreen(true)}
+                          title="Open Slide in Fullscreen Deck Mode"
+                          className="p-1.5 bg-gray-200 dark:bg-[#1A1A1A] hover:bg-[#2A2A2A] hover:text-white dark:hover:bg-[#222] border border-gray-300 dark:border-[#333] text-gray-600 dark:text-gray-400 rounded-lg transition-all cursor-pointer flex items-center justify-center shrink-0"
+                        >
+                          <Maximize2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* ACTUAL RENDERED STAGE CONTAINER */}
+                  <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col">
+                    {/* Mode 1: Document View */}
+                    {previewMode === "document" && (
+                      <div 
+                        className="flex-1 p-8"
+                        style={{ fontSize: `${previewZoom}%`, transition: 'font-size 150ms ease-in-out' }}
+                      >
+                        <div
+                          className={`prose ${theme === "dark" ? "dark:prose-invert" : ""} max-w-none`}
+                          dangerouslySetInnerHTML={{
+                            __html: parseMarkdown(activeNote.content),
+                          }}
+                        />
+                      </div>
+                    )}
+
+                    {/* Mode 2: HTML custom layouts */}
+                    {previewMode === "html_rich" && (
+                      <div 
+                        className="flex-1 p-8 flex flex-col items-center justify-center"
+                        style={{ fontSize: `${previewZoom}%`, transition: 'font-size 150ms ease-in-out' }}
+                      >
+                        {htmlTemplate === "raw" && (
+                          <div
+                            className="w-full h-full min-h-[400px] shadow-sm p-6 rounded-xl border border-gray-250 dark:border-[#333] bg-white dark:bg-[#141414] text-gray-800 dark:text-gray-100"
+                            dangerouslySetInnerHTML={{
+                              __html: activeNote.content.trim().startsWith("<") 
+                                ? activeNote.content 
+                                : parseMarkdown(activeNote.content),
+                            }}
+                          />
+                        )}
+
+                        {htmlTemplate === "social" && (
+                          <div className="w-full max-w-2xl bg-gradient-to-br from-[#10b981]/25 via-teal-500/[0.05] to-[#3b82f6]/20 p-8 rounded-3xl border border-emerald-500/10 dark:border-emerald-500/5 shadow-2xl relative overflow-hidden flex flex-col items-center justify-center text-center py-16">
+                            <div className="absolute top-0 right-0 w-48 h-48 bg-emerald-500/10 blur-3xl rounded-full" />
+                            <div className="absolute bottom-0 left-0 w-48 h-48 bg-blue-500/10 blur-3xl rounded-full" />
+                            
+                            <div className="max-w-md space-y-6 select-text">
+                              <span className="text-[10px] tracking-widest uppercase font-extrabold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/10">
+                                {activeNote.folder || "Unassigned Space"}
+                              </span>
+                              <h2 className="text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white leading-tight font-sans drop-shadow-sm">
+                                {activeNote.title || "Untitled Note"}
+                              </h2>
+                              <div 
+                                className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed font-sans max-h-48 overflow-y-auto no-scrollbar"
+                                dangerouslySetInnerHTML={{
+                                  __html: parseMarkdown(activeNote.content),
+                                }}
+                              />
+                            </div>
+                            <div className="mt-12 flex items-center gap-2 text-[10px] font-mono text-gray-400 uppercase tracking-widest pt-6 border-t border-gray-150 dark:border-gray-800 w-full justify-center">
+                              <span>Lumen Workspace</span>
+                              <span>•</span>
+                              <span>{new Date(activeNote.updatedAt || activeNote.createdAt).toLocaleDateString()}</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {htmlTemplate === "pitch" && (
+                          <div className="w-full max-w-2xl bg-[#FCFAF2] text-[#2C2A21] border-2 border-[#D4CBB3] rounded-2xl p-10 min-h-[450px] shadow-sm flex flex-col justify-between font-serif select-text">
+                            <div className="space-y-6">
+                              <div className="flex items-center justify-between border-b-2 border-[#D4CBB3] pb-3 text-xs uppercase font-bold tracking-wider opacity-60">
+                                <span>Note: {activeNote.title}</span>
+                                <span>{activeNote.folder || "Draft"}</span>
+                              </div>
+                              <h2 className="text-2xl font-bold tracking-normal italic text-gray-900 mt-2">
+                                {activeNote.title || "Untitled Proposal"}
+                              </h2>
+                              <div 
+                                className="text-sm leading-relaxed text-gray-800 font-serif"
+                                dangerouslySetInnerHTML={{
+                                  __html: parseMarkdown(activeNote.content),
+                                }}
+                              />
+                            </div>
+                            <div className="pt-8 border-t border-[#D4CBB3]/50 text-[10px] font-mono uppercase tracking-widest text-[#7C7563] flex justify-between">
+                              <span>Confidential Document</span>
+                              <span>{new Date(activeNote.updatedAt || activeNote.createdAt).toLocaleDateString()}</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {htmlTemplate === "cyberpunk" && (
+                          <div className="w-full max-w-2xl bg-black border-2 border-[#00f3ff] shadow-[0_0_20px_rgba(0,243,255,0.2)] rounded-lg p-8 min-h-[450px] flex flex-col justify-between font-mono relative overflow-hidden select-text">
+                            <div className="absolute top-0 right-0 p-1 text-[8px] text-[#00f3ff] border-l border-b border-[#00f3ff] bg-[#00f3ff]/10">
+                              HUD_V.1.08
+                            </div>
+                            <div className="space-y-6">
+                              <div className="flex items-center gap-2 text-[10px] text-[#00f3ff] uppercase font-bold">
+                                <span className="inline-block w-2.5 h-2.5 bg-[#00f3ff] animate-ping shrink-0" />
+                                <span>Note Database://{activeNote.title?.toUpperCase().replace(/\s+/g, "_") || "NULL"}</span>
+                              </div>
+                              <h2 className="text-2xl font-black text-white uppercase tracking-wider border-b border-[#00f3ff]/30 pb-4">
+                                {activeNote.title || "UNTITLED_STORM"}
+                              </h2>
+                              <div 
+                                className="text-xs text-green-400 space-y-2 leading-relaxed"
+                                dangerouslySetInnerHTML={{
+                                  __html: parseMarkdown(activeNote.content),
+                                }}
+                              />
+                            </div>
+                            <div className="pt-6 text-[9px] text-[#00f3ff]/60 border-t border-[#00f3ff]/20 flex justify-between">
+                              <span>STALKER CORE TERMINAL</span>
+                              <span>SYS_TIME: {new Date(activeNote.updatedAt || activeNote.createdAt).toLocaleTimeString()}</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Mode 3: Interactive Slides Slide deck */}
+                    {previewMode === "presentation" && (
+                      <div 
+                        className="flex-1 p-8 flex flex-col justify-center items-center min-h-[450px]"
+                        style={{ fontSize: `${previewZoom}%`, transition: 'font-size 150ms ease-in-out' }}
+                      >
+                        {/* Slide Aspect Screen Card */}
+                        <div 
+                          className={`w-full max-w-2xl aspect-[16/10] rounded-2xl border flex flex-col justify-between p-10 relative overflow-hidden shadow-2xl transition-all duration-300 ${
+                            presentationStyle === "standard"
+                              ? "bg-white border-gray-200 text-gray-800 shadow-gray-250/50"
+                              : presentationStyle === "dark"
+                                ? "bg-[#111111] border-gray-800 text-gray-100 shadow-neutral-950"
+                                : presentationStyle === "retro"
+                                  ? "bg-[#FFEAD2] border-black text-black border-2 font-mono shadow-neutral-950"
+                                  : "bg-gradient-to-br from-[#111827] via-[#0f172a] to-[#1e1e38] border-[#312e81]/30 text-teal-100 shadow-neutral-950"
+                          }`}
+                        >
+                          {/* Slide Header logo indicator */}
+                          <div className="flex items-center justify-between text-xs font-semibold opacity-60">
+                            <span className="uppercase tracking-widest font-bold">
+                              {activeNote.title || "Pitch Slide Deck"}
+                            </span>
+                            <span className="font-mono">
+                              {currentSlideIndex + 1} / {slides.length}
+                            </span>
+                          </div>
+
+                          {/* Presenter Content Box */}
+                          <div className="my-auto flex flex-col justify-center py-6 text-center select-text">
+                            <div 
+                              className={`prose ${presentationStyle === "dark" || presentationStyle === "teal" ? "dark:prose-invert" : ""} text-center font-sans max-w-none text-base max-h-56 overflow-y-auto no-scrollbar`}
+                              dangerouslySetInnerHTML={{
+                                __html: parseMarkdown(slides[currentSlideIndex]),
+                              }}
+                            />
+                          </div>
+
+                          {/* Progress Line */}
+                          <div className="absolute bottom-0 left-0 h-1 bg-emerald-500 transition-all duration-300" style={{ width: `${((currentSlideIndex + 1) / slides.length) * 100}%` }} />
+
+                          {/* Navigation Buttons inside slide footer */}
+                          <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100/10 z-10">
+                            <button
+                              onClick={() => setCurrentSlideIndex(prev => Math.max(0, prev - 1))}
+                              disabled={currentSlideIndex === 0}
+                              className="px-3 py-1 bg-black/10 hover:bg-black/20 dark:bg-white/10 dark:hover:bg-white/20 rounded text-xs font-bold transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer text-gray-700 dark:text-gray-300"
+                            >
+                              ← Prev
+                            </button>
+                            <span className="text-[10px] uppercase font-bold tracking-wider opacity-40">
+                              (Use Arrow Keys)
+                            </span>
+                            <button
+                              onClick={() => setCurrentSlideIndex(prev => Math.min(slides.length - 1, prev + 1))}
+                              disabled={currentSlideIndex === slides.length - 1}
+                              className="px-3 py-1 bg-black/10 hover:bg-black/20 dark:bg-white/10 dark:hover:bg-white/20 rounded text-xs font-bold transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer text-gray-700 dark:text-gray-300"
+                            >
+                              Next →
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Mode 4: Bento Infographics Layout */}
+                    {previewMode === "infographic" && (
+                      <div 
+                        className="flex-1 p-8 overflow-y-auto"
+                        style={{ fontSize: `${previewZoom}%`, transition: 'font-size 150ms ease-in-out' }}
+                      >
+                        <div className="max-w-4xl mx-auto space-y-6">
+                          {/* Banner Header */}
+                          <div className="p-8 rounded-3xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-xl relative overflow-hidden flex flex-col justify-end min-h-[160px]">
+                            <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 blur-3xl rounded-full" />
+                            <span className="text-[10px] tracking-widest uppercase font-mono font-extrabold text-teal-100 mb-2">Workspace Bento Infographic</span>
+                            <h1 className="text-3xl font-black tracking-tight">{activeNote.title || "Graphic Note Template"}</h1>
+                            <p className="text-sm text-teal-50 font-medium mt-1">Automatically compiled from markdown segments.</p>
+                          </div>
+
+                          {/* Render beautiful grid cards */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {parsedSections.map((sect, i) => (
+                              <div 
+                                key={i}
+                                className={`p-6 rounded-2xl border transition-all hover:scale-[1.01] hover:shadow-lg flex flex-col justify-between ${
+                                  sect.type === 'stats'
+                                    ? "bg-gradient-to-br from-emerald-500/10 to-teal-500/10 dark:from-[#132c1e] dark:to-[#081810] border-emerald-500/20 col-span-1 md:col-span-2 text-center py-10"
+                                    : sect.type === 'code'
+                                      ? "bg-[#161616] border-gray-800 text-gray-300 col-span-1"
+                                      : "bg-white dark:bg-[#181818] border-gray-150 dark:border-[#222] text-gray-800 dark:text-gray-200 col-span-1"
+                                }`}
+                              >
+                                <div>
+                                  <h3 className="text-base font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide border-b border-gray-100 dark:border-neutral-800 pb-2 mb-3">
+                                    {sect.title}
+                                  </h3>
+
+                                  {/* Stats Layout */}
+                                  {sect.type === 'stats' && sect.stats && (
+                                    <div className="flex flex-wrap items-center justify-center gap-12 py-4">
+                                      {sect.stats.map((stat, idx) => (
+                                        <div key={idx} className="flex flex-col items-center">
+                                          <span className="text-4xl md:text-5xl font-black text-emerald-500 tracking-tight select-none">
+                                            {stat.num}
+                                          </span>
+                                          <span className="text-xs uppercase font-extrabold tracking-wider text-gray-500 dark:text-gray-400 mt-1.5">
+                                            {stat.label}
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {/* Paragraph list-items */}
+                                  {sect.paragraphs.length > 0 && (
+                                    <div className="space-y-2 text-sm leading-relaxed opacity-90 mb-4 select-text">
+                                      {sect.paragraphs.map((p, idx) => <p key={idx}>{p}</p>)}
+                                    </div>
+                                  )}
+
+                                  {/* Bullet Lists items */}
+                                  {sect.list_items.length > 0 && (
+                                    <ul className="space-y-1.5 my-3 text-sm">
+                                      {sect.list_items.map((item, idx) => (
+                                        <li key={idx} className="flex items-start gap-2 select-text">
+                                          <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
+                                          <span className="opacity-95">{item}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+
+                            {/* Standard fallback card if content is too short */}
+                            {parsedSections.length === 0 && (
+                              <div className="p-6 rounded-2xl border border-dashed border-gray-300 dark:border-[#333] col-span-2 text-center text-gray-500 py-12">
+                                Write headers (# Name) and key metrics (e.g., "99% Active") to populate interactive bento elements.
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </>
             )
@@ -1810,23 +2577,224 @@ Instructions:
       {showBulkDeleteModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm print:hidden">
           <div className="bg-white dark:bg-[#111] border border-gray-200 dark:border-[#333] rounded-xl shadow-2xl p-6 max-w-sm w-full">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-              Delete Multiple Notes
+            <h3 className="text-lg font-semibold text-gray-901 dark:text-white mb-2 flex items-center gap-2">
+              <ShieldAlert className="w-5 h-5 text-red-500" />
+              <span>Delete Multiple Notes</span>
             </h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-              Are you sure you want to delete the {Object.keys(selectedNoteIds).filter(id => selectedNoteIds[id]).length} selected note(s)? This action cannot be undone.
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              Are you sure you want to delete the <strong className="text-gray-950 dark:text-white font-extrabold">{selectedTotalCount}</strong> selected note(s)? This action cannot be undone.
             </p>
-            <div className="flex items-center justify-end gap-3">
-              <Button variant="ghost" onClick={() => setShowBulkDeleteModal(false)}>
+            
+            {Object.keys(excludedFolders).filter(f => excludedFolders[f]).length > 0 && (
+              <div className="text-xs bg-amber-500/10 text-amber-720 dark:text-amber-300 border border-amber-500/20 p-3 rounded-lg mb-6 leading-relaxed flex items-start gap-2">
+                <Lock className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="block font-bold mb-0.5">Note Guard Active</strong>
+                  <span>The following folders are excluded/guarded: <strong className="font-bold opacity-90">{Object.keys(excludedFolders).filter(f => excludedFolders[f]).join(", ")}</strong>. Their contents will be untouched.</span>
+                </div>
+              </div>
+            )}
+            
+            <div className="flex items-center justify-end gap-3 border-t border-gray-100 dark:border-[#222] pt-4">
+              <Button variant="ghost" className="h-9" onClick={() => setShowBulkDeleteModal(false)}>
                 Cancel
               </Button>
               <Button
                 onClick={confirmBulkDelete}
-                className="bg-red-500 hover:bg-red-600 text-white shadow-sm border-transparent animate-pulse"
+                className="h-9 bg-red-600 hover:bg-red-700 dark:bg-red-650 dark:hover:bg-red-600 text-white shadow-sm border-transparent"
               >
                 Delete Selected
               </Button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* RIGHT-CLICK CONTEXT MENU OVERLAY */}
+      {contextMenu && (
+        <div
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          className="fixed z-50 min-w-48 bg-white/95 dark:bg-[#121212]/95 backdrop-blur-md border border-gray-200 dark:border-[#2A2A2A] rounded-lg shadow-xl py-1 text-sm animate-in fade-in zoom-in-95 duration-100"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="px-3 py-1.5 text-[10px] uppercase font-bold text-gray-400 dark:text-gray-500 border-b border-gray-100 dark:border-[#222]">
+            Move to Folder
+          </div>
+          
+          <div className="py-1">
+            {/* Create Folder option */}
+            <button
+              onClick={() => {
+                const newFolder = prompt("Enter name for the new folder:");
+                if (newFolder && newFolder.trim()) {
+                  updateNote(contextMenu.noteId, { folder: newFolder.trim() });
+                }
+                setContextMenu(null);
+              }}
+              className="w-full text-left px-3 py-1.5 text-xs hover:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1.5 cursor-pointer"
+            >
+              <FolderPlus className="w-3.5 h-3.5 text-emerald-500" />
+              <span>＋ Create New Folder...</span>
+            </button>
+
+            <div className="h-px bg-gray-100 dark:bg-[#222] my-1" />
+
+            {/* Unassigned Option */}
+            <button
+              onClick={() => {
+                updateNote(contextMenu.noteId, { folder: undefined });
+                setContextMenu(null);
+              }}
+              className="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-[#1c1c1c] text-gray-700 dark:text-gray-300 flex items-center gap-1.5 cursor-pointer"
+            >
+              <File className="w-3.5 h-3.5 text-gray-400" />
+              <span>Make Floating (No Folder)</span>
+            </button>
+
+            {/* Folder list */}
+            {Object.keys(groupedNotes.folders).sort().map((folderName) => {
+              const note = notes.find(n => n.id === contextMenu.noteId);
+              const isCurrent = note?.folder === folderName;
+
+              return (
+                <button
+                  key={folderName}
+                  onClick={() => {
+                    updateNote(contextMenu.noteId, { folder: folderName });
+                    setContextMenu(null);
+                  }}
+                  disabled={isCurrent}
+                  className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between cursor-pointer ${
+                    isCurrent 
+                      ? "bg-emerald-500/5 text-emerald-600 dark:text-emerald-400 font-bold opacity-60 pointer-events-none" 
+                      : "hover:bg-gray-100 dark:hover:bg-[#1c1c1c] text-gray-700 dark:text-gray-300"
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5 truncate">
+                    <Folder className="w-3.5 h-3.5 text-blue-550 shrink-0" />
+                    <span className="truncate">{folderName}</span>
+                  </span>
+                  {isCurrent && <span className="text-[9px] font-bold text-emerald-500">Current</span>}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="h-px bg-gray-100 dark:bg-[#222] my-1" />
+
+          {/* Quick actions rename / delete */}
+          <div className="py-1 border-t border-gray-100 dark:border-[#222]/50">
+            <button
+              onClick={() => {
+                handleRenameClick(contextMenu.noteId);
+                setContextMenu(null);
+              }}
+              className="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-[#1c1c1c] text-gray-700 dark:text-gray-300 flex items-center gap-1.5 cursor-pointer"
+            >
+              <Edit2 className="w-3.5 h-3.5 text-gray-400" />
+              <span>Rename Note</span>
+            </button>
+            <button
+              onClick={() => {
+                handleDeleteClick(contextMenu.noteId);
+                setContextMenu(null);
+              }}
+              className="w-full text-left px-3 py-1.5 text-xs hover:bg-red-500/10 text-red-650 dark:text-red-400 flex items-center gap-1.5 cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-red-500" />
+              <span>Delete Note</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* FULLSCREEN PRESENTATION DECK MODAL */}
+      {isPresentationFullscreen && activeNote && (
+        <div className="fixed inset-0 z-[100] flex flex-col bg-gray-950 text-white select-none transition-opacity duration-300 animate-in fade-in">
+          {/* Header bar */}
+          <div className="flex items-center justify-between p-4 bg-black/40 backdrop-blur-md border-b border-white/5 select-none">
+            <div className="flex items-center gap-3">
+              <span className="text-emerald-400 text-sm font-bold tracking-widest uppercase bg-emerald-500/15 border border-emerald-500/20 px-2 py-0.5 rounded-md">
+                Presenter Mode
+              </span>
+              <span className="text-gray-300 font-semibold font-sans text-sm truncate max-w-sm">
+                {activeNote.title || "Pitch Slide Deck"}
+              </span>
+            </div>
+            
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-gray-400 font-mono">
+                Slide {currentSlideIndex + 1} of {slides.length}
+              </span>
+              <button
+                onClick={() => setIsPresentationFullscreen(false)}
+                className="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold transition-all cursor-pointer text-gray-300 hover:text-white"
+              >
+                Exit Fullscreen (Esc)
+              </button>
+            </div>
+          </div>
+
+          {/* Slide Deck Screen */}
+          <div className="flex-1 flex flex-col justify-center items-center p-8 select-text">
+            <div 
+              className={`w-full max-w-5xl aspect-[16/10] rounded-3xl border flex flex-col justify-between p-16 shadow-2xl relative overflow-hidden transition-all duration-300 ${
+                presentationStyle === "standard"
+                  ? "bg-white border-gray-200 text-gray-800"
+                  : presentationStyle === "dark"
+                    ? "bg-[#111111] border-gray-800 text-gray-100"
+                    : presentationStyle === "retro"
+                      ? "bg-[#FFEAD2] border-black text-black border-2 font-mono"
+                      : "bg-gradient-to-br from-[#111827] via-[#0f172a] to-[#1e1e38] border-[#312e81]/30 text-teal-100"
+              }`}
+              style={{ fontSize: `${previewZoom + 40}%` }}
+            >
+              {/* Top Banner layout */}
+              <div className="flex items-center justify-between text-xs font-bold opacity-40">
+                <span>{activeNote.title}</span>
+                <span>{currentSlideIndex + 1} / {slides.length}</span>
+              </div>
+
+              {/* Main Presenter content block */}
+              <div className="my-auto flex flex-col justify-center py-8 text-center">
+                <div 
+                  className={`prose ${presentationStyle === "dark" || presentationStyle === "teal" ? "dark:prose-invert" : ""} text-center font-sans max-w-none text-xl max-h-[420px] overflow-y-auto no-scrollbar`}
+                  dangerouslySetInnerHTML={{
+                    __html: parseMarkdown(slides[currentSlideIndex]),
+                  }}
+                />
+              </div>
+
+              {/* Navigation help description */}
+              <div className="flex items-center justify-between text-xs opacity-50 border-t border-white/5 pt-4">
+                <button
+                  onClick={() => setCurrentSlideIndex(prev => Math.max(0, prev - 1))}
+                  disabled={currentSlideIndex === 0}
+                  className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg font-bold transition-all disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer text-gray-350 hover:text-white"
+                >
+                  ← Previous Slide
+                </button>
+                <span className="font-mono text-[10px] uppercase">
+                  (Press space or arrow keys to navigate)
+                </span>
+                <button
+                  onClick={() => setCurrentSlideIndex(prev => Math.min(slides.length - 1, prev + 1))}
+                  disabled={currentSlideIndex === slides.length - 1}
+                  className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg font-bold transition-all disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer text-gray-350 hover:text-white"
+                >
+                  Next Slide →
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Progress bar line */}
+          <div className="h-1.5 bg-[#222] w-full">
+            <div 
+              className="h-full bg-emerald-500 transition-all duration-300"
+              style={{ width: `${((currentSlideIndex + 1)/slides.length) * 100}%` }}
+            />
           </div>
         </div>
       )}

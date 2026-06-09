@@ -7,7 +7,21 @@ export class LLMService {
   private config: AIConfig;
 
   constructor(config: AIConfig) {
-    this.config = config;
+    this.config = { ...config };
+    if (typeof window === 'undefined') {
+      // Server-side environment variables fallback
+      if (!this.config.apiKey || this.config.apiKey.trim() === '') {
+        if (this.config.provider === 'gemini' && process.env.GEMINI_API_KEY) {
+          this.config.apiKey = process.env.GEMINI_API_KEY;
+        } else if (this.config.provider === 'groq' && process.env.GROQ_API_KEY) {
+          this.config.apiKey = process.env.GROQ_API_KEY;
+        } else if (this.config.provider === 'openai' && process.env.OPENAI_API_KEY) {
+          this.config.apiKey = process.env.OPENAI_API_KEY;
+        } else if (this.config.provider === 'anthropic' && process.env.ANTHROPIC_API_KEY) {
+          this.config.apiKey = process.env.ANTHROPIC_API_KEY;
+        }
+      }
+    }
   }
 
   private getCleanBaseUrl(url?: string): string {
@@ -30,6 +44,23 @@ export class LLMService {
    * Verifies if the current configuration is valid and returns available models on success.
    */
   async verifyConnection(): Promise<{ success: boolean; message: string; models?: string[] }> {
+    if (typeof window !== 'undefined') {
+      try {
+        const response = await fetch('/api/ai/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ config: this.config })
+        });
+        if (!response.ok) {
+          const errText = await response.text();
+          return { success: false, message: `Server error: ${response.status} ${errText}` };
+        }
+        return await response.json();
+      } catch (e: any) {
+        return { success: false, message: `Failed to connect to local AI proxy server: ${e.message}` };
+      }
+    }
+
     const { provider, apiKey, baseUrl } = this.config;
 
     if (provider === 'ollama') {
@@ -152,6 +183,36 @@ export class LLMService {
   }
 
   async *streamResponse(messages: ChatMessage[]): AsyncGenerator<string, void, unknown> {
+    if (typeof window !== 'undefined') {
+      try {
+        const response = await fetch('/api/ai/stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ config: this.config, messages })
+        });
+        
+        if (!response.ok) {
+          const errText = await response.text();
+          yield `[Server Error: ${response.status} - ${errText}]`;
+          return;
+        }
+
+        if (!response.body) throw new Error('No response body');
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          yield decoder.decode(value, { stream: true });
+        }
+        return;
+      } catch (error: any) {
+        yield `[Network Error: ${error.message || error}]`;
+        return;
+      }
+    }
+
     const { provider, baseUrl, apiKey, modelName } = this.config;
     const model = modelName || 'llama3'; // Default model
 

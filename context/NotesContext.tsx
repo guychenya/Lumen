@@ -4,6 +4,17 @@ import React, { createContext, useContext, useEffect, useState, ReactNode } from
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { Note } from '../types';
 
+function generateUUID(): string {
+  if (typeof window !== 'undefined' && typeof window.crypto !== 'undefined' && typeof window.crypto.randomUUID === 'function') {
+    return window.crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
 interface NotesContextType {
   notes: Note[];
   activeNoteId: string | null;
@@ -28,7 +39,7 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   useEffect(() => {
     if (notes.length === 0) {
       const newNote: Note = {
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         title: 'Welcome to Lumen Notes',
         content: 'Start typing here to capture your thoughts.\n\nUse the toolbar above to format text or use AI tools to summarize and improve your writing.',
         updatedAt: Date.now(),
@@ -61,7 +72,7 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   const addNote = () => {
     const newNote: Note = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       title: '',
       content: '',
       updatedAt: Date.now(),
@@ -74,7 +85,7 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   const addVoiceMemo = (title: string, content: string, audioData?: string, duration?: number, tags?: string[]) => {
     const newMemo: Note = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       title: title || `Voice Memo - ${new Date().toLocaleDateString()}`,
       content,
       updatedAt: Date.now(),
@@ -89,7 +100,7 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   
   const importNote = (title: string, content: string, tags?: string[], folder?: string) => {
     const newNote: Note = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       title,
       content,
       updatedAt: Date.now(),
@@ -104,7 +115,7 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const importMultipleNotes = (items: Array<{ title: string; content: string; tags?: string[]; folder?: string }>) => {
     if (items.length === 0) return;
     const newNotes: Note[] = items.map(item => ({
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       title: item.title,
       content: item.content,
       updatedAt: Date.now(),

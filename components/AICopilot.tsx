@@ -55,28 +55,46 @@ export const AICopilot: React.FC<AICopilotProps> = ({ onClose }) => {
 
   // Helper system prompt generator
   const getSystemPrompt = () => {
+    // Sort other notes by last updated date so we can find recently edited documents
+    const sortedOtherNotes = [...notes]
+      .filter(n => !activeNote || n.id !== activeNote.id)
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+
+    // Only include excerpts for the 5 most recently updated notes to heavily reduce prompt size and prevent API token/context limit errors
+    const recentlyUpdatedIds = new Set(sortedOtherNotes.slice(0, 5).map(n => n.id));
+
     const notesContextStr = notes.map((note) => {
       const isActive = activeNote && note.id === activeNote.id;
       const title = note.title || "Untitled Note";
       let excerpt = "[Empty]";
+      
       if (isActive) {
         excerpt = "[Active Note - See complete details above]";
-      } else if (note.content) {
-        // Optimize excerpt size dynamically based on note count to avoid prompt bloat/context limit issues
-        const maxLength = notes.length > 12 ? 100 : (notes.length > 6 ? 200 : 350);
-        excerpt = note.content.substring(0, maxLength);
-        if (note.content.length > maxLength) excerpt += '...';
+      } else if (recentlyUpdatedIds.has(note.id)) {
+        if (note.content) {
+          excerpt = note.content.substring(0, 300);
+          if (note.content.length > 300) excerpt += '...';
+        }
+      } else {
+        excerpt = "[Content Excerpt Omitted to save context window space - ID and title are indexable]";
       }
+      
       const tagsStr = note.tags && note.tags.length > 0 ? `Tags: ${note.tags.join(', ')}` : "Tags: None";
       const folderStr = note.folder ? `Folder: ${note.folder}` : "Folder: None";
       return `[ID: ${note.id}]\nTitle: ${title}\n${folderStr}\n${tagsStr}\nContent:\n${excerpt}\n---`;
     }).join('\n\n');
 
+    // Always truncate the active note content if it is extremely long to fit nicely within standard prompt/token constraints
+    let activeContent = activeNote ? (activeNote.content || "") : "";
+    if (activeNote && activeContent.length > 10000) {
+      activeContent = activeContent.substring(0, 10000) + "\n\n... [Content Truncated for AI Context Limit - Showed first 10000 characters. Use replace_section or other tools to manipulate larger documents without copy-pasting everything]";
+    }
+
     return `You are "Lumen Copilot", an elite AI-native workspace agent.
 You have real-time access to all user's notes and files.
 
 Current Active Note:
-${activeNote ? `ID: ${activeNote.id}\nTitle: ${activeNote.title || "Untitled Note"}\nFolder: ${activeNote.folder || "None"}\nTags: ${activeNote.tags ? activeNote.tags.join(', ') : "None"}\nContent:\n${activeNote.content}` : "None Selected"}
+${activeNote ? `ID: ${activeNote.id}\nTitle: ${activeNote.title || "Untitled Note"}\nFolder: ${activeNote.folder || "None"}\nTags: ${activeNote.tags ? activeNote.tags.join(', ') : "None"}\nContent:\n${activeContent}` : "None Selected"}
 
 All Workspace Notes (${notes.length} documents):
 === WORKSPACE NOTES START ===
@@ -149,9 +167,27 @@ System Protocol Guidelines:
     const service = new LLMService(config);
     const systemPromptMessage: ChatMessage = { role: 'system', content: getSystemPrompt() };
     
-    // Slit chat history payload to keep only last 10 messages for context, preventing TPM token error limit
-    const MAX_HISTORY_MESSAGES = 10;
-    const historyPayload = updatedMessages.slice(-MAX_HISTORY_MESSAGES);
+    // Slit chat history payload using character length & message limit and walking backwards to strictly respect context window boundaries
+    const historyPayload: ChatMessage[] = [];
+    let characterCount = 0;
+    const MAX_HISTORY_CHARS = 24000;
+    
+    for (let i = updatedMessages.length - 1; i >= 0; i--) {
+      const msg = updatedMessages[i];
+      const msgLen = (msg.content || "").length;
+      if (characterCount + msgLen < MAX_HISTORY_CHARS || historyPayload.length === 0) {
+        historyPayload.unshift(msg);
+        characterCount += msgLen;
+      } else {
+        break;
+      }
+    }
+    
+    // Limit total context messages to avoid TPM bottlenecks
+    if (historyPayload.length > 12) {
+      historyPayload.splice(0, historyPayload.length - 12);
+    }
+    
     const apiPayload = [systemPromptMessage, ...historyPayload];
 
     try {

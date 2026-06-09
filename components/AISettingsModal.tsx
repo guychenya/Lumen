@@ -30,7 +30,7 @@ const KNOWN_MODELS: Record<string, string[]> = {
   openai: ['gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo'],
   anthropic: ['claude-3-5-sonnet-latest', 'claude-3-opus-latest', 'claude-3-haiku-20240307'],
   gemini: ['gemini-2.5-flash', 'gemini-3-pro-preview'],
-  groq: [], 
+  groq: ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile', 'gemma2-9b-it', 'mixtral-8x7b-32768'], 
   custom: [],
   ollama: [] 
 };
@@ -49,7 +49,7 @@ const DEFAULT_MODELS: Record<string, string> = {
   openai: 'gpt-4o',
   anthropic: 'claude-3-5-sonnet-latest',
   gemini: 'gemini-2.5-flash',
-  groq: 'llama3-8b-8192',
+  groq: 'llama-3-1-8b-instant',
   custom: 'custom-model',
 };
 
@@ -312,8 +312,6 @@ export const AISettingsModal: React.FC = () => {
                             className="w-full bg-white dark:bg-[#1C1C1C] border border-gray-300 dark:border-[#333] rounded-lg p-3.5 pr-10 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 appearance-none shadow-sm cursor-pointer"
                         >
                             <option value="ollama">Ollama (Run locally on your machine)</option>
-                            <option value="openai">OpenAI (GPT-4o, GPT-3.5)</option>
-                            <option value="anthropic">Anthropic (Claude 3.5 Sonnet, Opus)</option>
                             <option value="gemini">Google Gemini (Gemini 2.5 Pro/Flash)</option>
                             <option value="groq">Groq (Ultra-fast llama, mistral models)</option>
                             <option value="custom">Custom (OpenAI-compatible endpoints)</option>
