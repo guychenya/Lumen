@@ -98,8 +98,10 @@ export class LLMService {
         
         try {
             const headers: HeadersInit = {};
-            if (apiKey && apiKey.toLowerCase() !== 'na' && apiKey.toLowerCase() !== '') {
-                headers['Authorization'] = `Bearer ${apiKey}`;
+            // Make sure the API key is clean to avoid auth errors from hidden spaces.
+            const cleanKey = apiKey ? apiKey.trim().replace(/^['"]|['"]$/g, '') : '';
+            if (cleanKey && cleanKey.toLowerCase() !== 'na') {
+                headers['Authorization'] = `Bearer ${cleanKey}`;
             }
 
             const res = await fetch(endpoint, { headers });
@@ -192,8 +194,9 @@ export class LLMService {
             if (!endpoint) throw new Error("Invalid endpoint for OpenAI-compatible provider.");
 
             const headers: HeadersInit = { 'Content-Type': 'application/json' };
-            if (apiKey && apiKey.toLowerCase() !== 'na' && apiKey.toLowerCase() !== '') {
-                headers['Authorization'] = `Bearer ${apiKey}`;
+            const cleanKey = apiKey ? apiKey.trim().replace(/^['"]|['"]$/g, '') : '';
+            if (cleanKey && cleanKey.toLowerCase() !== 'na') {
+                headers['Authorization'] = `Bearer ${cleanKey}`;
             }
 
             const response = await fetch(endpoint, {
