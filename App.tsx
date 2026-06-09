@@ -113,6 +113,7 @@ const EditorWorkspace = () => {
     addNote,
     updateNote,
     deleteNote,
+    deleteMultipleNotes,
     importNote,
     importMultipleNotes,
   } = useNotes();
@@ -184,6 +185,69 @@ const EditorWorkspace = () => {
 
     return { folders, unassigned };
   }, [filteredNotes]);
+
+  // Bulk Deletion / Selection State
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedNoteIds, setSelectedNoteIds] = useState<
+    Record<string, boolean>
+  >({});
+
+  const toggleSelectNote = (id: string, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+    }
+    setSelectedNoteIds((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
+  };
+
+  const handleBulkDelete = () => {
+    const idsToDelete = Object.keys(selectedNoteIds).filter(
+      (id) => selectedNoteIds[id],
+    );
+    if (idsToDelete.length === 0) return;
+
+    if (
+      confirm(
+        `Are you sure you want to delete ${idsToDelete.length} selected note(s)?`,
+      )
+    ) {
+      deleteMultipleNotes(idsToDelete);
+      setSelectedNoteIds({});
+      setIsSelectionMode(false);
+    }
+  };
+
+  const hasVisibleNotes = filteredNotes.length > 0;
+  const selectedVisibleCount = useMemo(() => {
+    return filteredNotes.filter((n) => selectedNoteIds[n.id]).length;
+  }, [filteredNotes, selectedNoteIds]);
+
+  const isAllSelected =
+    hasVisibleNotes && selectedVisibleCount === filteredNotes.length;
+
+  const toggleSelectAll = () => {
+    if (isAllSelected) {
+      // Deselect all visible
+      setSelectedNoteIds((prev) => {
+        const next = { ...prev };
+        filteredNotes.forEach((n) => {
+          delete next[n.id];
+        });
+        return next;
+      });
+    } else {
+      // Select all visible
+      setSelectedNoteIds((prev) => {
+        const next = { ...prev };
+        filteredNotes.forEach((n) => {
+          next[n.id] = true;
+        });
+        return next;
+      });
+    }
+  };
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const headerTitleRef = useRef<HTMLInputElement>(null);
@@ -928,17 +992,43 @@ Instructions:
   };
 
   const renderNoteItem = (note: Note, isInsideFolder = false) => {
+    const isSelected = !!selectedNoteIds[note.id];
+
+    const handleItemClick = (e: React.MouseEvent) => {
+      if (isSelectionMode) {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleSelectNote(note.id);
+      } else {
+        setActiveNoteId(note.id);
+      }
+    };
+
     return (
       <div key={note.id} className="relative group flex items-center w-full">
         <button
-          onClick={() => setActiveNoteId(note.id)}
-          className={`w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors text-left ${
-            activeNoteId === note.id
-              ? "bg-gray-200 dark:bg-[#1C1C1C] text-gray-900 dark:text-white border border-gray-300 dark:border-[#333]"
-              : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#1A1A1A] hover:text-gray-700 dark:hover:text-gray-200"
+          onClick={handleItemClick}
+          className={`w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-all text-left ${
+            isSelectionMode
+              ? isSelected
+                ? "bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 border border-emerald-500/20 dark:border-emerald-500/30"
+                : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#1A1A1A] hover:text-gray-700 dark:hover:text-gray-200 border border-transparent"
+              : activeNoteId === note.id
+                ? "bg-gray-200 dark:bg-[#1C1C1C] text-gray-900 dark:text-white border border-gray-300 dark:border-[#333]"
+                : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#1A1A1A] hover:text-gray-700 dark:hover:text-gray-200 border border-transparent"
           } ${isInsideFolder ? "pl-5 border-l-2 border-dashed border-gray-205 dark:border-gray-800" : ""}`}
         >
-          {note.type === "voice" ? (
+          {isSelectionMode ? (
+            <div className="shrink-0 flex items-center justify-center">
+              <input
+                type="checkbox"
+                checked={isSelected}
+                onChange={() => toggleSelectNote(note.id)}
+                className="w-3.5 h-3.5 accent-emerald-500 text-emerald-600 rounded border-gray-300 dark:border-gray-700 cursor-pointer"
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
+          ) : note.type === "voice" ? (
             <Mic
               className={`w-3.5 h-3.5 shrink-0 ${activeNoteId === note.id ? "text-purple-500" : "text-purple-600 dark:text-purple-400"}`}
             />
@@ -973,22 +1063,24 @@ Instructions:
             )}
           </div>
         </button>
-        <div className="absolute right-2 top-0 bottom-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-          <button
-            onClick={() => handleRenameClick(note.id)}
-            className="p-1 text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-200 dark:hover:bg-[#2A2A2A] rounded cursor-pointer"
-            title="Rename note"
-          >
-            <Edit2 className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={() => handleDeleteClick(note.id)}
-            className="p-1 text-red-500/70 hover:text-red-600 dark:hover:text-red-500 hover:bg-red-500/10 rounded cursor-pointer"
-            title="Delete note"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
+        {!isSelectionMode && (
+          <div className="absolute right-2 top-0 bottom-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+            <button
+              onClick={() => handleRenameClick(note.id)}
+              className="p-1 text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-200 dark:hover:bg-[#2A2A2A] rounded cursor-pointer"
+              title="Rename note"
+            >
+              <Edit2 className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => handleDeleteClick(note.id)}
+              className="p-1 text-red-500/70 hover:text-red-600 dark:hover:text-red-500 hover:bg-red-500/10 rounded cursor-pointer"
+              title="Delete note"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
       </div>
     );
   };
@@ -1022,11 +1114,66 @@ Instructions:
         </div>
 
         <div className="flex-1 p-3 space-y-1 overflow-y-auto custom-scrollbar">
-          <div className="px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-500 uppercase tracking-wider">
-            {sidebarTab === "all" && "All Documents"}
-            {sidebarTab === "notes" && "Markdown Notes"}
-            {sidebarTab === "voice" && "Voice Memos"}
-          </div>
+          {/* Bulk Selection Toolbar */}
+          {isSelectionMode ? (
+            <div className="px-3 py-2.5 mb-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 dark:bg-emerald-500/10 flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-emerald-800 dark:text-emerald-400 flex items-center gap-1.5">
+                  <CheckSquare className="w-3.5 h-3.5" />
+                  <span>{selectedVisibleCount} Selected</span>
+                </span>
+                <button
+                  onClick={() => {
+                    setIsSelectionMode(false);
+                    setSelectedNoteIds({});
+                  }}
+                  className="text-[10px] tracking-wider uppercase font-bold text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white px-2 py-0.5 bg-gray-200/50 dark:bg-[#202020] rounded transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={toggleSelectAll}
+                  className="flex-1 py-1 px-2 text-[11px] font-semibold rounded-md border border-gray-300 dark:border-[#333] hover:bg-gray-100 dark:hover:bg-[#1A1A1A] transition-all text-gray-700 dark:text-gray-300 cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <input
+                    type="checkbox"
+                    checked={isAllSelected}
+                    onChange={toggleSelectAll}
+                    className="w-3 h-3 accent-emerald-500 rounded cursor-pointer pointer-events-none"
+                    readOnly
+                  />
+                  <span>{isAllSelected ? "Deselect All" : "Select All"}</span>
+                </button>
+
+                <button
+                  onClick={handleBulkDelete}
+                  disabled={selectedVisibleCount === 0}
+                  className="flex-1 py-1 px-2 text-[11px] font-semibold rounded-md bg-red-600 hover:bg-red-700 dark:bg-red-600/30 dark:hover:bg-red-500/50 text-white dark:text-red-300 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete ({selectedVisibleCount})</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="px-3 py-2 mb-1 flex items-center justify-between border-b border-gray-200/50 dark:border-[#222]/50">
+              <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest">
+                {sidebarTab === "all" && "All Documents"}
+                {sidebarTab === "notes" && "Markdown Notes"}
+                {sidebarTab === "voice" && "Voice Memos"}
+              </span>
+              <button
+                onClick={() => setIsSelectionMode(true)}
+                className="text-[10px] uppercase font-bold tracking-wider text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 px-1.5 py-0.5 hover:bg-emerald-500/10 rounded transition-colors cursor-pointer"
+                title="Manage multiple notes"
+              >
+                Bulk Action
+              </button>
+            </div>
+          )}
           {/* Folders Accordion */}
           {Object.keys(groupedNotes.folders)
             .sort()

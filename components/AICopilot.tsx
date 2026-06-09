@@ -15,7 +15,7 @@ interface AICopilotProps {
 }
 
 export const AICopilot: React.FC<AICopilotProps> = ({ onClose }) => {
-  const { notes, activeNote, activeNoteId, setActiveNoteId, updateNote, deleteNote, importNote } = useNotes();
+  const { notes, activeNote, activeNoteId, setActiveNoteId, updateNote, deleteNote, deleteMultipleNotes, importNote } = useNotes();
   const { config, connectionStatus } = useAI();
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     const saved = localStorage.getItem('lumen-copilot-messages');
@@ -235,13 +235,22 @@ System Protocol Guidelines:
 
     // 4. Delete note
     extractBlocks(text, 'workspace_delete_note').forEach(block => {
-      let id = getAttribute(block.attributesStr, 'id');
-      if (!id || id === 'active') id = activeNoteId || '';
-      if (id) {
-        const matchingNote = notes.find(n => n.id === id);
-        const title = matchingNote ? matchingNote.title : "unknown";
-        deleteNote(id);
-        actions.push(`🗑️ Deleted note: "${title || 'Untitled note'}"`);
+      let idAttr = getAttribute(block.attributesStr, 'id');
+      if (!idAttr || idAttr === 'active') idAttr = activeNoteId || '';
+      if (idAttr) {
+        const ids = idAttr.split(',').map(s => s.trim()).filter(Boolean);
+        if (ids.length === 1) {
+          const id = ids[0];
+          const matchingNote = notes.find(n => n.id === id);
+          const title = matchingNote ? matchingNote.title : "unknown";
+          deleteNote(id);
+          actions.push(`🗑️ Deleted note: "${title || 'Untitled note'}"`);
+        } else if (ids.length > 1) {
+          const matchingNotes = notes.filter(n => ids.includes(n.id));
+          const titlesStr = matchingNotes.map(n => `"${n.title || 'Untitled'}"`).join(', ');
+          deleteMultipleNotes(ids);
+          actions.push(`🗑️ Bulk deleted ${ids.length} notes: ${titlesStr}`);
+        }
       }
     });
 

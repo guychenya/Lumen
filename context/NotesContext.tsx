@@ -12,6 +12,7 @@ interface NotesContextType {
   addVoiceMemo: (title: string, content: string, audioData?: string, duration?: number, tags?: string[]) => void;
   updateNote: (id: string, updates: Partial<Note>) => void;
   deleteNote: (id: string) => void;
+  deleteMultipleNotes: (ids: string[]) => void;
   importNote: (title: string, content: string, tags?: string[], folder?: string) => void;
   importMultipleNotes: (items: Array<{ title: string; content: string; tags?: string[]; folder?: string }>) => void;
   activeNote: Note | undefined;
@@ -133,10 +134,15 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     setNotes(prevNotes => prevNotes.filter(n => n.id !== id));
   };
 
+  const deleteMultipleNotes = (ids: string[]) => {
+    const idSet = new Set(ids);
+    setNotes(prevNotes => prevNotes.filter(n => !idSet.has(n.id)));
+  };
+
   const activeNote = notes.find(n => n.id === activeNoteId);
 
   return (
-    <NotesContext.Provider value={{ notes, activeNoteId, setActiveNoteId, addNote, addVoiceMemo, updateNote, deleteNote, importNote, importMultipleNotes, activeNote }}>
+    <NotesContext.Provider value={{ notes, activeNoteId, setActiveNoteId, addNote, addVoiceMemo, updateNote, deleteNote, deleteMultipleNotes, importNote, importMultipleNotes, activeNote }}>
       {children}
     </NotesContext.Provider>
   );
