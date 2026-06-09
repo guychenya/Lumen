@@ -153,6 +153,7 @@ const EditorWorkspace = () => {
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
   const [slashMenuPos, setSlashMenuPos] = useState({ top: 0, left: 0 });
   const [noteToDelete, setNoteToDelete] = useState<string | null>(null);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
 
   // Custom states for filtering notes & voice memos
   const [sidebarTab, setSidebarTab] = useState<"all" | "notes" | "voice">(
@@ -218,16 +219,19 @@ const EditorWorkspace = () => {
       (id) => selectedNoteIds[id],
     );
     if (idsToDelete.length === 0) return;
+    setShowBulkDeleteModal(true);
+  };
 
-    if (
-      confirm(
-        `Are you sure you want to delete ${idsToDelete.length} selected note(s)?`,
-      )
-    ) {
+  const confirmBulkDelete = () => {
+    const idsToDelete = Object.keys(selectedNoteIds).filter(
+      (id) => selectedNoteIds[id],
+    );
+    if (idsToDelete.length > 0) {
       deleteMultipleNotes(idsToDelete);
       setSelectedNoteIds({});
       setIsSelectionMode(false);
     }
+    setShowBulkDeleteModal(false);
   };
 
   const hasVisibleNotes = filteredNotes.length > 0;
@@ -1797,6 +1801,30 @@ Instructions:
                 className="bg-red-500 hover:bg-red-600 text-white shadow-sm border-transparent"
               >
                 Delete Note
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBulkDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm print:hidden">
+          <div className="bg-white dark:bg-[#111] border border-gray-200 dark:border-[#333] rounded-xl shadow-2xl p-6 max-w-sm w-full">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+              Delete Multiple Notes
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+              Are you sure you want to delete the {Object.keys(selectedNoteIds).filter(id => selectedNoteIds[id]).length} selected note(s)? This action cannot be undone.
+            </p>
+            <div className="flex items-center justify-end gap-3">
+              <Button variant="ghost" onClick={() => setShowBulkDeleteModal(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={confirmBulkDelete}
+                className="bg-red-500 hover:bg-red-600 text-white shadow-sm border-transparent animate-pulse"
+              >
+                Delete Selected
               </Button>
             </div>
           </div>
