@@ -30,6 +30,7 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
   const [audioBase64, setAudioBase64] = useState<string | undefined>(undefined);
   const [recordDuration, setRecordDuration] = useState(0);
   
+  const audioBase64Ref = useRef<string | undefined>(undefined);
   const recognitionRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -43,6 +44,7 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
       setAiResponse('');
       setErrorMsg('');
       setAudioBase64(undefined);
+      audioBase64Ref.current = undefined;
       setRecordDuration(0);
       shouldBeRecording.current = true;
       startRecording();
@@ -229,7 +231,39 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
     }
   };
 
-  const handleFinish = () => {
+  const stopRecordingAndGetAudio = (): Promise<string | undefined> => {
+    return new Promise((resolve) => {
+      if (!mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') {
+        resolve(audioBase64Ref.current);
+        return;
+      }
+
+      mediaRecorderRef.current.onstop = () => {
+        const mimeType = mediaRecorderRef.current?.mimeType || 'audio/webm';
+        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64 = reader.result as string;
+          setAudioBase64(base64);
+          audioBase64Ref.current = base64;
+          resolve(base64);
+        };
+        reader.onerror = () => {
+          resolve(undefined);
+        };
+        reader.readAsDataURL(audioBlob);
+      };
+
+      try {
+        mediaRecorderRef.current.stop();
+      } catch (e) {
+        console.error("Error stopping MediaRecorder:", e);
+        resolve(undefined);
+      }
+    });
+  };
+
+  const handleFinish = async () => {
     shouldBeRecording.current = false;
     
     if (durationIntervalRef.current) {
@@ -237,32 +271,40 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
         durationIntervalRef.current = null;
     }
     
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        try {
-            mediaRecorderRef.current.stop();
-        } catch (e) { /* ignore */ }
-    }
-    
     if (recognitionRef.current) {
         recognitionRef.current.onend = null;
-        recognitionRef.current.stop();
+        try {
+            recognitionRef.current.stop();
+        } catch (e) {}
     }
+
+    // Explicitly transition to processing so the visualizer handles it gracefully
+    setStage('processing');
+
+    // Wait for the recording to stop and Base64 format to be fully generated
+    const base64Audio = await stopRecordingAndGetAudio();
     
+    if (mediaStream) {
+        mediaStream.getTracks().forEach(track => track.stop());
+    }
+    setMediaStream(null);
+
     // Combine final and any leftover interim
     const fullText = (finalTranscript + ' ' + interimTranscript).trim();
     
-    setTimeout(() => {
-        if (mediaStream) {
-            mediaStream.getTracks().forEach(track => track.stop());
+    if (!fullText) {
+        // Even if no speech was transcribed (Chrome iframe limits, silence, etc), STILL save the voice memo!
+        if (saveMode === 'voice') {
+            const title = `Voice Memo - ${new Date().toLocaleDateString()}`;
+            addVoiceMemo(title, "Empty voice recording (or untranscribed audio).", base64Audio, recordDuration || 1, ['voice']);
+        } else {
+            onInsert("Voice Recording (Empty)");
         }
-        setMediaStream(null);
-        
-        if (!fullText) {
-            onClose(); 
-            return;
-        }
-        processWithAI(fullText);
-    }, 400); 
+        onClose(); 
+        return;
+    }
+
+    await processWithAI(fullText, base64Audio, recordDuration);
   };
 
   const handleRetry = () => {
@@ -275,7 +317,7 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
     }, 100);
   };
 
-  const processWithAI = async (textToProcess: string) => {
+  const processWithAI = async (textToProcess: string, base64AudioContent?: string, durationSecs?: number) => {
     setStage('processing');
     setAiResponse(''); 
     const service = new LLMService(config);
@@ -303,20 +345,27 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
         }
         
         // Save recording based on user choice
-        setTimeout(() => {
-            if (saveMode === 'voice') {
-                const words = fullResult.trim().replace(/[#\n\-\*]/g, ' ').split(/\s+/).filter(Boolean).slice(0, 5).join(' ');
-                const title = words ? `Voice: ${words}...` : `Voice Memo - ${new Date().toLocaleDateString()}`;
-                addVoiceMemo(title, fullResult, audioBase64, recordDuration || 1, ['voice']);
-            } else {
-                onInsert(fullResult);
-            }
-            onClose();
-        }, 1500);
+        if (saveMode === 'voice') {
+            const words = fullResult.trim().replace(/[#\n\-\*]/g, ' ').split(/\s+/).filter(Boolean).slice(0, 5).join(' ');
+            const title = words ? `Voice: ${words}...` : `Voice Memo - ${new Date().toLocaleDateString()}`;
+            addVoiceMemo(title, fullResult, base64AudioContent, durationSecs || 1, ['voice']);
+        } else {
+            onInsert(fullResult);
+        }
+        onClose();
 
     } catch (e) {
+        console.error("AI error, saving fallback raw text:", e);
+        // Fallback: Even if AI stream fails, still save the raw user voice transcript
+        if (saveMode === 'voice') {
+            const title = `Voice: ${textToProcess.replace(/[#\n\-\*]/g, ' ').split(/\s+/).filter(Boolean).slice(0, 5).join(' ')}...`;
+            addVoiceMemo(title, textToProcess, base64AudioContent, durationSecs || 1, ['voice']);
+        } else {
+            onInsert(textToProcess);
+        }
         setStage('error');
-        setErrorMsg("AI Processing Failed. Please check settings.");
+        setErrorMsg("AI processing failed, but your transcription was saved as a note.");
+        setTimeout(() => onClose(), 2000);
     }
   };
 
