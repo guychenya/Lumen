@@ -123,14 +123,34 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
       // Initialize MediaRecorder to save actual voice audio
       audioChunksRef.current = [];
       try {
-        const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+        const candidates = [
+          'audio/mp4;codecs=aac',
+          'audio/mp4',
+          'audio/aac',
+          'audio/webm;codecs=opus',
+          'audio/webm',
+          'audio/ogg;codecs=opus'
+        ];
+        
+        let selectedMimeType = '';
+        for (const mime of candidates) {
+          if (MediaRecorder.isTypeSupported(mime)) {
+            selectedMimeType = mime;
+            break;
+          }
+        }
+        
+        const options = selectedMimeType ? { mimeType: selectedMimeType } : undefined;
+        const mediaRecorder = new MediaRecorder(stream, options);
+        const actualMimeType = mediaRecorder.mimeType || selectedMimeType || 'audio/webm';
+        
         mediaRecorder.ondataavailable = (event) => {
           if (event.data && event.data.size > 0) {
             audioChunksRef.current.push(event.data);
           }
         };
         mediaRecorder.onstop = () => {
-          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          const audioBlob = new Blob(audioChunksRef.current, { type: actualMimeType });
           const reader = new FileReader();
           reader.onloadend = () => {
             setAudioBase64(reader.result as string);
@@ -140,7 +160,7 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
         mediaRecorder.start();
         mediaRecorderRef.current = mediaRecorder;
       } catch (err) {
-        console.warn("Failed to start MediaRecorder with webm. Trying default encoder:", err);
+        console.warn("Failed to start MediaRecorder with prioritized mimeTypes. Trying default encoder:", err);
         try {
           const mediaRecorder = new MediaRecorder(stream);
           mediaRecorder.ondataavailable = (event) => {

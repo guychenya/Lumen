@@ -162,10 +162,15 @@ export const VoiceMemoPlayer: React.FC<VoiceMemoPlayerProps> = ({ note, onUpdate
   const handleDownloadAudio = () => {
     if (!note.audioData) return;
     
-    let extension = 'webm';
+    let extension = 'm4a';
     const match = note.audioData.match(/^data:audio\/(\w+);base64,/);
     if (match && match[1]) {
-      extension = match[1];
+      const mime = match[1].toLowerCase();
+      if (mime === 'webm' || mime === 'ogg' || mime === 'mp4' || mime === 'aac' || mime === 'm4a') {
+        extension = 'm4a';
+      } else {
+        extension = mime;
+      }
     }
     
     const link = document.createElement('a');
