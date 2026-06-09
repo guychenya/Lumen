@@ -199,10 +199,18 @@ export class LLMService {
                 headers['Authorization'] = `Bearer ${cleanKey}`;
             }
 
+            // Explicitly set max_tokens to prevent large default max output values from inflating TPM rate-limit calculations (crucial for Groq free tiers)
+            const requestBody: Record<string, any> = {
+                model,
+                messages,
+                stream: true,
+                max_tokens: provider === 'groq' ? 1024 : 1500
+            };
+
             const response = await fetch(endpoint, {
                 method: 'POST',
                 headers,
-                body: JSON.stringify({ model, messages, stream: true })
+                body: JSON.stringify(requestBody)
             });
 
             if (!response.ok) {

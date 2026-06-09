@@ -511,16 +511,66 @@ const EditorWorkspace = () => {
     setGeneratedText(""); 
 
     const service = new LLMService(config);
-    const fullPrompt = `${promptPrefix} for the following text. Output in Markdown format:\n\n${editorContent}`;
-    const messages: ChatMessage[] = [{ role: 'user', content: fullPrompt }];
+
+    // Split text into chunks of max 8000 characters (approx 2000 tokens) to guarantee
+    // compatibility with tight context limits and free tier tokens-per-minute (TPM) limits on Groq
+    const chunkText = (text: string, maxChunkSize: number = 8000): string[] => {
+      if (text.length <= maxChunkSize) return [text];
+      
+      const chunks: string[] = [];
+      const paragraphs = text.split('\n');
+      let currentChunk = '';
+      
+      for (const para of paragraphs) {
+        if ((currentChunk + '\n' + para).length > maxChunkSize) {
+          if (currentChunk.trim()) {
+            chunks.push(currentChunk.trim());
+            currentChunk = para;
+          } else {
+            // Split huge paragraphs character-by-character if needed
+            let remaining = para;
+            while (remaining.length > maxChunkSize) {
+              chunks.push(remaining.substring(0, maxChunkSize));
+              remaining = remaining.substring(maxChunkSize);
+            }
+            currentChunk = remaining;
+          }
+        } else {
+          currentChunk = currentChunk ? currentChunk + '\n' + para : para;
+        }
+      }
+      
+      if (currentChunk.trim()) {
+        chunks.push(currentChunk.trim());
+      }
+      
+      return chunks;
+    };
+
+    const chunks = chunkText(editorContent, 8000);
 
     try {
-        const generator = service.streamResponse(messages);
-        for await (const token of generator) {
-            setGeneratedText(prev => prev + token);
+        for (let i = 0; i < chunks.length; i++) {
+            const chunk = chunks[i];
+            let chunkPrompt = '';
+            
+            if (chunks.length > 1) {
+                chunkPrompt = `${promptPrefix} for the following text (Part ${i + 1} of ${chunks.length}). Output in Markdown format:\n\n${chunk}`;
+                // Append section visual boundary marker when multi-chunk summaries are streamed
+                setGeneratedText(prev => prev + (prev ? "\n\n" : "") + `### Section ${i + 1}:\n`);
+            } else {
+                chunkPrompt = `${promptPrefix} for the following text. Output in Markdown format:\n\n${chunk}`;
+            }
+
+            const messages: ChatMessage[] = [{ role: 'user', content: chunkPrompt }];
+            const generator = service.streamResponse(messages);
+            
+            for await (const token of generator) {
+                setGeneratedText(prev => prev + token);
+            }
         }
     } catch (e) {
-        setGeneratedText("Error generating response. Please check your AI Settings.");
+        setGeneratedText(prev => prev + "\n\nError generating response. Please check your AI Settings.");
     } finally {
         setIsGenerating(false);
     }
