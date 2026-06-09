@@ -57,14 +57,15 @@ export const AICopilot: React.FC<AICopilotProps> = ({ onClose }) => {
       const title = note.title || "Untitled Note";
       const excerpt = note.content ? (note.content.substring(0, 500) + (note.content.length > 500 ? '...' : '')) : "[Empty]";
       const tagsStr = note.tags && note.tags.length > 0 ? `Tags: ${note.tags.join(', ')}` : "Tags: None";
-      return `[ID: ${note.id}]\nTitle: ${title}\n${tagsStr}\nContent:\n${excerpt}\n---`;
+      const folderStr = note.folder ? `Folder: ${note.folder}` : "Folder: None";
+      return `[ID: ${note.id}]\nTitle: ${title}\n${folderStr}\n${tagsStr}\nContent:\n${excerpt}\n---`;
     }).join('\n\n');
 
     return `You are "Lumen Copilot", an elite AI-native workspace agent.
 You have real-time access to all user's notes and files.
 
 Current Active Note:
-${activeNote ? `ID: ${activeNote.id}\nTitle: ${activeNote.title || "Untitled Note"}\nTags: ${activeNote.tags ? activeNote.tags.join(', ') : "None"}\nContent:\n${activeNote.content}` : "None Selected"}
+${activeNote ? `ID: ${activeNote.id}\nTitle: ${activeNote.title || "Untitled Note"}\nFolder: ${activeNote.folder || "None"}\nTags: ${activeNote.tags ? activeNote.tags.join(', ') : "None"}\nContent:\n${activeNote.content}` : "None Selected"}
 
 All Workspace Notes (${notes.length} documents):
 === WORKSPACE NOTES START ===
@@ -77,8 +78,8 @@ You can answer questions, search/analyze notes, write or summarize content, and 
 To make changes to the workspace, append or insert these XML tags anywhere inside your reply. Write them exactly as shown below:
 
 1. Create a new markdown note:
-   <workspace_create_note title="The Title Of Note" tags="tag1, tag2">The full content of the note in markdown</workspace_create_note>
-   Note: tags is optional (comma-separated strings).
+   <workspace_create_note title="The Title Of Note" tags="tag1, tag2" folder="Folder Name">The full content of the note in markdown</workspace_create_note>
+   Note: tags and folder are optional. If the user asks to create a folder or put/create a note in a folder, create it with the folder attribute.
 
 2. Update/edit an existing note (rewriting its full content):
    <workspace_update_note id="note-id" title="Note Title">The complete updated content including any additions or changes</workspace_update_note>
@@ -104,8 +105,17 @@ To make changes to the workspace, append or insert these XML tags anywhere insid
 8. Remove tags from a note:
    <workspace_remove_tags id="note-id" tags="tag1, tag2"></workspace_remove_tags>
 
+9. Move a note to a folder:
+   <workspace_move_note id="note-id" folder="Folder Name"></workspace_move_note>
+   Note: This organizes a note into a folder. To create a new folder, simply move a note to that newly named folder. To remove a note from any folder, use folder="". If id is omitted or "active", it applies to the currently active note.
+
+10. Organize/group multiple notes into a folder:
+    <workspace_organize_notes note_ids="id1, id2, id3" folder="Folder Name"></workspace_organize_notes>
+    Note: Highly recommended for grouping, sorting, or restructuring several notes. Specify a list of comma-separated note IDs and the folder name. Use this to automatically group related notes.
+
 System Protocol Guidelines:
-- If a user asks to "create a note about...", construct a high-quality note and return <workspace_create_note title="Notes Title" tags="tag1, tag2">Markdown content</workspace_create_note>.
+- If a user asks to "create a note about..." in a specific folder, use <workspace_create_note title="Notes Title" folder="Folder Name">Markdown content</workspace_create_note>.
+- If a user asks to "organize my notes", "auto group related notes", or "move React-related notes to a React folder", find the related notes, create a new folder if appropriate, and execute <workspace_organize_notes note_ids="id-1, id-2" folder="React Folder"></workspace_organize_notes> to group them all automatically.
 - If a user says "rename this note to...", execute a workspace_rename_note with the new title.
 - If a user says "add tags 'draft' and 'ideas'", return <workspace_add_tags tags="draft, ideas"></workspace_add_tags>
 - If a user asks to change or edit a specific sentence or paragraph in their note, ALWAYS prefer using <workspace_replace_section id="active" target="sentence to parse">improved sentence</workspace_replace_section> to keep updates surgical, precise, and instantaneous.
@@ -185,9 +195,14 @@ System Protocol Guidelines:
     extractBlocks(text, 'workspace_create_note').forEach(block => {
       const title = getAttribute(block.attributesStr, 'title') || 'Untitled Note';
       const tagsAttr = getAttribute(block.attributesStr, 'tags');
+      const folderAttr = getAttribute(block.attributesStr, 'folder');
       const parsedTags = tagsAttr ? tagsAttr.split(',').map(t => t.trim().toLowerCase()).filter(Boolean) : [];
-      importNote(title.trim(), block.content.trim(), parsedTags);
-      actions.push(`✨ Created new note: "${title}"`);
+      importNote(title.trim(), block.content.trim(), parsedTags, folderAttr ? folderAttr.trim() : undefined);
+      if (folderAttr) {
+        actions.push(`✨ Created new note "${title}" in folder "${folderAttr.trim()}"`);
+      } else {
+        actions.push(`✨ Created new note: "${title}"`);
+      }
     });
 
     // 2. Update note
@@ -309,6 +324,48 @@ System Protocol Guidelines:
           const reduced = existingTags.filter(t => !tagsToRemove.includes(t));
           updateNote(id, { tags: reduced });
           actions.push(`🏷️ Removed tags [${tagsToRemove.join(', ')}] from "${note.title || 'Untitled'}"`);
+        }
+      }
+    });
+
+    // 9. Move note to folder
+    extractBlocks(text, 'workspace_move_note').forEach(block => {
+      let id = getAttribute(block.attributesStr, 'id');
+      if (!id || id === 'active') id = activeNoteId || '';
+      const folder = getAttribute(block.attributesStr, 'folder');
+      
+      if (id) {
+        const note = notes.find(n => n.id === id);
+        if (note) {
+          const trimmedFolder = folder.trim();
+          updateNote(id, { folder: trimmedFolder || undefined });
+          if (trimmedFolder) {
+            actions.push(`📁 Moved note "${note.title || 'Untitled'}" to folder "${trimmedFolder}"`);
+          } else {
+            actions.push(`📁 Removed note "${note.title || 'Untitled'}" from any folder`);
+          }
+        }
+      }
+    });
+
+    // 10. Organize/group multiple notes into a folder
+    extractBlocks(text, 'workspace_organize_notes').forEach(block => {
+      const noteIdsAttr = getAttribute(block.attributesStr, 'note_ids');
+      const folder = getAttribute(block.attributesStr, 'folder');
+      const trimmedFolder = folder.trim();
+      
+      if (noteIdsAttr && trimmedFolder) {
+        const ids = noteIdsAttr.split(',').map(s => s.trim()).filter(Boolean);
+        let movedCount = 0;
+        ids.forEach(id => {
+          const note = notes.find(n => n.id === id);
+          if (note) {
+            updateNote(id, { folder: trimmedFolder });
+            movedCount++;
+          }
+        });
+        if (movedCount > 0) {
+          actions.push(`📁 Grouped ${movedCount} notes into folder "${trimmedFolder}"`);
         }
       }
     });
