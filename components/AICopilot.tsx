@@ -7,7 +7,8 @@ import { Button } from './ui/Button';
 import { parseMarkdown } from '../services/markdown';
 import { 
   Sparkles, Send, Trash2, X, RotateCcw, FileText, 
-  Plus, CheckCircle2, ChevronRight, MessageSquare, Zap
+  Plus, CheckCircle2, ChevronRight, MessageSquare, Zap,
+  Copy, Check
 } from 'lucide-react';
 
 interface AICopilotProps {
@@ -33,6 +34,7 @@ export const AICopilot: React.FC<AICopilotProps> = ({ onClose }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [latestResponseChunk, setLatestResponseChunk] = useState('');
   const [executedActions, setExecutedActions] = useState<string[]>([]);
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -54,8 +56,17 @@ export const AICopilot: React.FC<AICopilotProps> = ({ onClose }) => {
   // Helper system prompt generator
   const getSystemPrompt = () => {
     const notesContextStr = notes.map((note) => {
+      const isActive = activeNote && note.id === activeNote.id;
       const title = note.title || "Untitled Note";
-      const excerpt = note.content ? (note.content.substring(0, 500) + (note.content.length > 500 ? '...' : '')) : "[Empty]";
+      let excerpt = "[Empty]";
+      if (isActive) {
+        excerpt = "[Active Note - See complete details above]";
+      } else if (note.content) {
+        // Optimize excerpt size dynamically based on note count to avoid prompt bloat/context limit issues
+        const maxLength = notes.length > 12 ? 100 : (notes.length > 6 ? 200 : 350);
+        excerpt = note.content.substring(0, maxLength);
+        if (note.content.length > maxLength) excerpt += '...';
+      }
       const tagsStr = note.tags && note.tags.length > 0 ? `Tags: ${note.tags.join(', ')}` : "Tags: None";
       const folderStr = note.folder ? `Folder: ${note.folder}` : "Folder: None";
       return `[ID: ${note.id}]\nTitle: ${title}\n${folderStr}\n${tagsStr}\nContent:\n${excerpt}\n---`;
@@ -137,7 +148,11 @@ System Protocol Guidelines:
 
     const service = new LLMService(config);
     const systemPromptMessage: ChatMessage = { role: 'system', content: getSystemPrompt() };
-    const apiPayload = [systemPromptMessage, ...updatedMessages];
+    
+    // Slit chat history payload to keep only last 10 messages for context, preventing TPM token error limit
+    const MAX_HISTORY_MESSAGES = 10;
+    const historyPayload = updatedMessages.slice(-MAX_HISTORY_MESSAGES);
+    const apiPayload = [systemPromptMessage, ...historyPayload];
 
     try {
       const generator = service.streamResponse(apiPayload);
@@ -384,6 +399,18 @@ System Protocol Guidelines:
     }
   };
 
+  const handleCopy = (text: string, idx: number) => {
+    const cleaned = cleanResponseText(text);
+    navigator.clipboard.writeText(cleaned)
+      .then(() => {
+        setCopiedIdx(idx);
+        setTimeout(() => setCopiedIdx(null), 2000);
+      })
+      .catch((err) => {
+        console.error('Failed to copy text: ', err);
+      });
+  };
+
   const clearChat = () => {
     setMessages([]);
     setExecutedActions([]);
@@ -469,6 +496,22 @@ System Protocol Guidelines:
             </div>
             {msg.role === 'assistant' && (
               <div className="flex items-center gap-2 mt-1.5 px-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-200">
+                <button
+                  type="button"
+                  onClick={() => handleCopy(msg.content, idx)}
+                  className="text-[10px] font-bold px-2 py-1 bg-white hover:bg-gray-100 dark:bg-[#1A1A1A] dark:hover:bg-[#252525] border border-gray-200 dark:border-[#333] text-gray-600 dark:text-gray-300 hover:text-emerald-500 dark:hover:text-emerald-400 rounded-md transition-colors flex items-center gap-1 shadow-xs cursor-pointer select-none"
+                  title="Copy reply to clipboard"
+                >
+                  {copiedIdx === idx ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-500" /> Copied!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5 text-gray-500 group-hover:text-emerald-500" /> Copy
+                    </>
+                  )}
+                </button>
                 <button
                   type="button"
                   onClick={() => {

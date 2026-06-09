@@ -55,6 +55,8 @@ import {
   Moon,
   Sun,
   MessageSquare,
+  Sidebar,
+  PanelRight,
 } from "lucide-react";
 
 // Helper to calculate caret coordinates in a textarea
@@ -127,6 +129,15 @@ const EditorWorkspace = () => {
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [isVoiceModeOpen, setIsVoiceModeOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    const saved = localStorage.getItem("lumen-sidebar-open");
+    return saved !== null ? saved === "true" : true;
+  });
+
+  useEffect(() => {
+    localStorage.setItem("lumen-sidebar-open", String(sidebarOpen));
+  }, [sidebarOpen]);
+
   const [activeSelection, setActiveSelection] = useState<{
     start: number;
     end: number;
@@ -1088,11 +1099,26 @@ Instructions:
   return (
     <div className="flex h-screen w-full bg-white dark:bg-[#0F0F0F] text-gray-800 dark:text-gray-100 font-sans overflow-hidden">
       {/* Sidebar */}
-      <div className="w-64 bg-gray-50 dark:bg-[#111111] border-r border-gray-200 dark:border-[#222] flex flex-col min-w-[250px] shrink-0 print:hidden z-20">
+      {sidebarOpen && (
+        <div className="w-64 bg-gray-50 dark:bg-[#111111] border-r border-gray-200 dark:border-[#222] flex flex-col min-w-[250px] shrink-0 print:hidden z-20">
         <div className="p-4 border-b border-gray-200 dark:border-[#222]">
-          <div className="flex items-center gap-2 text-emerald-500 font-bold text-xl tracking-tight">
-            <Zap className="w-5 h-5 fill-current" />
-            <span>Lumen</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-emerald-500 font-bold text-xl tracking-tight">
+              <Zap className="w-5 h-5 fill-current" />
+              <span>Lumen</span>
+            </div>
+            
+            {/* Left Sidebar Toggle with ON/OFF Indicator */}
+            <button
+              onClick={() => setSidebarOpen(false)}
+              title="Turn Off Sidebar"
+              className="p-1.5 rounded-lg border transition-all flex items-center gap-1.5 cursor-pointer bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 dark:border-emerald-500/30 hover:bg-emerald-500/20"
+            >
+              <Sidebar className="w-4 h-4" />
+              <span className="text-[10px] font-bold tracking-wider text-emerald-600 dark:text-emerald-400">
+                ON
+              </span>
+            </button>
           </div>
         </div>
 
@@ -1299,12 +1325,25 @@ Instructions:
           </div>
         </div>
       </div>
+    )}
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0 relative h-screen">
         {/* Header */}
         <header className="h-14 border-b border-gray-200 dark:border-[#222] bg-gray-50 dark:bg-[#111111] flex items-center justify-between px-6 shrink-0 print:hidden z-20">
           <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 w-full mr-4 min-w-0">
+            {!sidebarOpen && (
+              <button
+                onClick={() => setSidebarOpen(true)}
+                title="Turn On Sidebar"
+                className="p-1.5 mr-1 rounded-lg border transition-all flex items-center gap-1.5 cursor-pointer bg-gray-150 dark:bg-[#1A1A1A] text-gray-450 dark:text-gray-500 border-gray-200 dark:border-[#333] hover:bg-gray-200 dark:hover:bg-[#222] hover:text-gray-650 dark:hover:text-[#fff] shrink-0 active:scale-95"
+              >
+                <Sidebar className="w-4 h-4 shrink-0 text-gray-400 dark:text-gray-550" />
+                <span className="text-[10px] font-bold tracking-wider text-gray-400 dark:text-gray-550 shrink-0">
+                  OFF
+                </span>
+              </button>
+            )}
             <span className="hidden sm:inline shrink-0">My Workspace</span>
             <ChevronRight className="w-4 h-4 hidden sm:inline shrink-0 font-light" />
             <input
