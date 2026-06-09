@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, RotateCw, Volume2, Mic, Clock, Calendar, Check, Save } from 'lucide-react';
+import { Play, Pause, RotateCw, Volume2, Mic, Clock, Calendar, Check, Save, Copy, Download } from 'lucide-react';
 import { Note } from '../types';
 import { Button } from './ui/Button';
 
@@ -16,6 +16,7 @@ export const VoiceMemoPlayer: React.FC<VoiceMemoPlayerProps> = ({ note, onUpdate
   const [transcript, setTranscript] = useState(note.content || '');
   const [isEditing, setIsEditing] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
   
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -158,6 +159,48 @@ export const VoiceMemoPlayer: React.FC<VoiceMemoPlayerProps> = ({ note, onUpdate
     setTimeout(() => setIsSaved(false), 2000);
   };
 
+  const handleDownloadAudio = () => {
+    if (!note.audioData) return;
+    
+    let extension = 'webm';
+    const match = note.audioData.match(/^data:audio\/(\w+);base64,/);
+    if (match && match[1]) {
+      extension = match[1];
+    }
+    
+    const link = document.createElement('a');
+    link.href = note.audioData;
+    const sanitizedTitle = (note.title || 'voice-memo').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    link.download = `${sanitizedTitle}.${extension}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleCopyTranscript = () => {
+    if (!note.content) return;
+    navigator.clipboard.writeText(note.content)
+      .then(() => {
+        setIsCopied(true);
+        setTimeout(() => setIsCopied(false), 2000);
+      })
+      .catch(err => console.error("Could not copy transcript: ", err));
+  };
+
+  const handleDownloadTranscript = () => {
+    if (!note.content) return;
+    const blob = new Blob([note.content], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const sanitizedTitle = (note.title || 'voice-memo-transcript').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    link.download = `${sanitizedTitle}.md`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="flex-1 flex flex-col h-full overflow-y-auto bg-gray-50/50 dark:bg-[#0c0c0c] p-6 lg:p-8 custom-scrollbar">
       <div className="max-w-3xl mx-auto w-full space-y-6">
@@ -222,11 +265,23 @@ export const VoiceMemoPlayer: React.FC<VoiceMemoPlayerProps> = ({ note, onUpdate
 
               <button 
                 onClick={() => { if (audioRef.current) audioRef.current.currentTime = 0; setCurrentTime(0); }}
-                className="p-2 bg-gray-100 hover:bg-gray-200 dark:bg-[#1c1c1c] dark:hover:bg-[#2a2a2a] rounded-full text-gray-600 dark:text-gray-300 transition-colors"
+                className="p-2 bg-gray-100 hover:bg-gray-200 dark:bg-[#1c1c1c] dark:hover:bg-[#2a2a2a] rounded-full text-gray-600 dark:text-gray-300 transition-colors mr-1"
                 title="Restart"
               >
                 <RotateCw className="w-4 h-4" />
               </button>
+
+              {note.audioData && (
+                <Button 
+                  onClick={handleDownloadAudio}
+                  variant="secondary"
+                  size="sm"
+                  className="h-9 text-xs px-3 bg-gray-100 hover:bg-gray-200 dark:bg-[#1c1c1c] dark:hover:bg-[#2a2a2a] rounded-full border-none flex items-center gap-1.5 font-medium cursor-pointer"
+                  title="Download raw audio file"
+                >
+                  <Download className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" /> Download Audio
+                </Button>
+              )}
             </div>
 
             {/* Volume control */}
@@ -253,10 +308,37 @@ export const VoiceMemoPlayer: React.FC<VoiceMemoPlayerProps> = ({ note, onUpdate
             </h2>
 
             <div className="flex items-center gap-2">
+              {isCopied && (
+                <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1 mr-1 animate-in fade-in">
+                  <Check className="w-3.5 h-3.5" /> Copied!
+                </span>
+              )}
               {isSaved && (
                 <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1 animate-pulse">
                   <Check className="w-3.5 h-3.5" /> Saved
                 </span>
+              )}
+              {!isEditing && note.content && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={handleCopyTranscript}
+                    className="h-8 text-xs flex items-center gap-1 hover:text-emerald-550 dark:hover:text-emerald-400 cursor-pointer"
+                    title="Copy transcript to clipboard"
+                  >
+                    <Copy className="w-3.5 h-3.5 text-gray-500" /> Copy
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={handleDownloadTranscript}
+                    className="h-8 text-xs flex items-center gap-1 hover:text-emerald-550 dark:hover:text-emerald-400 cursor-pointer"
+                    title="Download transcript as document"
+                  >
+                    <Download className="w-3.5 h-3.5 text-gray-500" /> Download Transcript
+                  </Button>
+                </>
               )}
               {isEditing ? (
                 <Button 
