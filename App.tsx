@@ -15,7 +15,7 @@ import { ChatMessage } from './types';
 import { 
   Settings, Sparkles, Plus, FileText, ChevronRight, MoreHorizontal, Zap,
   Bold, Italic, List, PenLine, Trash2, Edit2, Image as ImageIcon, 
-  Table as TableIcon, Download, Upload, File, FileCode, Printer, ChevronDown, Mic,
+  Table as TableIcon, Download, Upload, File, FileCode, Printer, ChevronDown, ChevronUp, Folder, Mic,
   Heading1, Heading2, Heading3, ListOrdered, CheckSquare, Quote, Code, Minus, Video, Type,
   Eye, Columns, Moon, Sun, MessageSquare
 } from 'lucide-react';
@@ -65,13 +65,15 @@ type ViewMode = 'edit' | 'split' | 'preview';
 
 const EditorWorkspace = () => {
   const { setSettingsOpen, config, connectionStatus } = useAI();
-  const { notes, activeNote, activeNoteId, setActiveNoteId, addNote, updateNote, deleteNote, importNote } = useNotes();
+  const { notes, activeNote, activeNoteId, setActiveNoteId, addNote, updateNote, deleteNote, importNote, importMultipleNotes } = useNotes();
   const { theme, toggleTheme } = useTheme();
   
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedText, setGeneratedText] = useState("");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const [isImportMenuOpen, setIsImportMenuOpen] = useState(false);
+  const [importStatus, setImportStatus] = useState<string | null>(null);
   const [isVoiceModeOpen, setIsVoiceModeOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(true);
   const [activeSelection, setActiveSelection] = useState<{ start: number; end: number; text: string } | null>(null);
@@ -103,6 +105,7 @@ const EditorWorkspace = () => {
   const headerTitleRef = useRef<HTMLInputElement>(null);
   const imageFileInputRef = useRef<HTMLInputElement>(null);
   const mdFileInputRef = useRef<HTMLInputElement>(null);
+  const folderFileInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const renameTriggered = useRef<string | null>(null);
 
@@ -497,27 +500,119 @@ const EditorWorkspace = () => {
   };
 
   const handleImportMarkdown = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-        const content = event.target?.result as string;
-        
-        const generateTitle = (filename: string) => {
-            const base = filename.replace(/\.(md|markdown)$/i, '');
-            return base.replace(/[_-]/g, ' ')
-                       .split(' ')
-                       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-                       .join(' ');
-        };
-        const title = generateTitle(file.name);
-        
-        importNote(title, content);
-    };
-    reader.readAsText(file);
-    // Reset file input
-    e.target.value = '';
+    const fileList = Array.from(files);
+    const mdFiles = fileList.filter(file => file.name.endsWith('.md') || file.name.endsWith('.markdown'));
+
+    if (mdFiles.length === 0) {
+        setImportStatus("No valid Markdown (.md) files found.");
+        setTimeout(() => setImportStatus(null), 3000);
+        e.target.value = '';
+        return;
+    }
+
+    const promises = mdFiles.map(file => {
+        return new Promise<{ title: string; content: string; tags?: string[] }>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const content = event.target?.result as string;
+                const generateTitle = (filename: string) => {
+                    const base = filename.replace(/\.(md|markdown)$/i, '');
+                    return base.replace(/[_-]/g, ' ')
+                               .split(' ')
+                               .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                               .join(' ');
+                };
+                const title = generateTitle(file.name);
+                resolve({ title, content, tags: [] });
+            };
+            reader.onerror = () => reject(new Error(`Failed to read ${file.name}`));
+            reader.readAsText(file);
+        });
+    });
+
+    Promise.all(promises)
+        .then(results => {
+            importMultipleNotes(results);
+            setImportStatus(`Successfully imported ${results.length} files!`);
+            setTimeout(() => setImportStatus(null), 3500);
+        })
+        .catch(err => {
+            console.error(err);
+            setImportStatus("Error importing files.");
+            setTimeout(() => setImportStatus(null), 3000);
+        })
+        .finally(() => {
+            e.target.value = '';
+        });
+  };
+
+  const handleImportFolder = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const fileList = Array.from(files);
+    const mdFiles = fileList.filter(file => /\.(md|markdown)$/i.test(file.name));
+
+    if (mdFiles.length === 0) {
+        setImportStatus("No .md files found in folder.");
+        setTimeout(() => setImportStatus(null), 3000);
+        e.target.value = '';
+        return;
+    }
+
+    const promises = mdFiles.map(file => {
+        return new Promise<{ title: string; content: string; tags?: string[] }>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const content = event.target?.result as string;
+                const generateTitle = (filename: string) => {
+                    const base = filename.replace(/\.(md|markdown)$/i, '');
+                    return base.replace(/[_-]/g, ' ')
+                               .split(' ')
+                               .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                               .join(' ');
+                };
+                const title = generateTitle(file.name);
+                
+                // Keep track of folder names as tags
+                const tags: string[] = [];
+                if (file.webkitRelativePath) {
+                    const parts = file.webkitRelativePath.split('/');
+                    parts.pop(); // remove file name
+                    parts.forEach(part => {
+                        if (part && part !== '.' && part !== '..') {
+                            const cleanTag = part.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+                            if (cleanTag && !tags.includes(cleanTag)) {
+                                tags.push(cleanTag);
+                            }
+                        }
+                    });
+                }
+                
+                resolve({ title, content, tags });
+            };
+            reader.onerror = () => reject(new Error(`Failed to read ${file.name}`));
+            reader.readAsText(file);
+        });
+    });
+
+    Promise.all(promises)
+        .then(results => {
+            importMultipleNotes(results);
+            setImportStatus(`Successfully imported ${results.length} notes from folder!`);
+            setTimeout(() => setImportStatus(null), 3500);
+        })
+        .catch(err => {
+            console.error(err);
+            setImportStatus("Error importing folder.");
+            setTimeout(() => setImportStatus(null), 3000);
+        })
+        .finally(() => {
+            e.target.value = '';
+        });
   };
 
   // --- AI Actions ---
@@ -799,15 +894,46 @@ Instructions:
             >
                <Mic className="w-4 h-4 mr-2" /> Record Voice Memo
             </Button>
-            <div className="flex items-center gap-2">
-             <Button 
-                 variant="secondary"
-                 onClick={() => mdFileInputRef.current?.click()}
-                 className="w-full"
-             >
-                 <Upload className="w-4 h-4 mr-2" /> Import .md
-             </Button>
-             <Button variant="secondary" onClick={toggleTheme} className="px-2.5">
+            <div className="flex items-center gap-2 relative">
+             <div className="relative flex-1">
+               <Button 
+                   variant="secondary"
+                   onClick={() => setIsImportMenuOpen(!isImportMenuOpen)}
+                   className="w-full flex items-center justify-between h-10 px-3 py-2 text-sm"
+               >
+                   <span className="flex items-center"><Upload className="w-4 h-4 mr-2" /> Import</span>
+                   {isImportMenuOpen ? <ChevronDown className="w-4 h-4 ml-1 opacity-60 animate-in fade-in zoom-in-50 duration-200" /> : <ChevronUp className="w-4 h-4 ml-1 opacity-60 animate-in fade-in zoom-in-50 duration-200" />}
+               </Button>
+               
+               {isImportMenuOpen && (
+                 <>
+                   <div className="fixed inset-0 z-30" onClick={() => setIsImportMenuOpen(false)} />
+                   <div className="absolute bottom-full left-0 right-0 mb-1 bg-white dark:bg-[#161616] border border-gray-200 dark:border-[#222]/80 rounded-lg shadow-xl py-1 z-40 animate-in fade-in slide-in-from-bottom-2 duration-150">
+                     <button
+                       onClick={() => {
+                         setIsImportMenuOpen(false);
+                         mdFileInputRef.current?.click();
+                       }}
+                       className="w-full text-left px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#222]/80 flex items-center gap-2 transition-colors cursor-pointer"
+                     >
+                       <FileCode className="w-3.5 h-3.5 text-emerald-500" />
+                       <span>Import .md files</span>
+                     </button>
+                     <button
+                       onClick={() => {
+                         setIsImportMenuOpen(false);
+                         folderFileInputRef.current?.click();
+                       }}
+                       className="w-full text-left px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#222]/80 flex items-center gap-2 transition-colors cursor-pointer"
+                     >
+                       <Folder className="w-3.5 h-3.5 text-blue-500" />
+                       <span>Import Folder</span>
+                     </button>
+                   </div>
+                 </>
+               )}
+             </div>
+             <Button variant="secondary" onClick={toggleTheme} className="px-2.5 h-10">
                  {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
              </Button>
             </div>
@@ -1068,8 +1194,26 @@ Instructions:
                 ref={mdFileInputRef}
                 className="hidden"
                 accept=".md,.markdown,text/markdown"
+                multiple
                 onChange={handleImportMarkdown}
            />
+           <input 
+                type="file" 
+                ref={folderFileInputRef}
+                className="hidden"
+                {...{ webkitdirectory: "", directory: "", multiple: true }}
+                onChange={handleImportFolder}
+           />
+
+           {/* Import Status Toast */}
+           {importStatus && (
+              <div className="absolute bottom-6 left-6 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                 <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-gray-900/95 dark:bg-black/95 text-white border border-[#333] shadow-2xl">
+                    <CheckSquare className="w-4 h-4 text-emerald-400" />
+                    <span className="text-sm font-medium">{importStatus}</span>
+                 </div>
+              </div>
+           )}
 
            {/* AI Output Overlay */}
            { (isGenerating || generatedText) && (

@@ -13,6 +13,7 @@ interface NotesContextType {
   updateNote: (id: string, updates: Partial<Note>) => void;
   deleteNote: (id: string) => void;
   importNote: (title: string, content: string, tags?: string[]) => void;
+  importMultipleNotes: (items: Array<{ title: string; content: string; tags?: string[] }>) => void;
   activeNote: Note | undefined;
 }
 
@@ -98,6 +99,20 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     setActiveNoteId(newNote.id);
   };
 
+  const importMultipleNotes = (items: Array<{ title: string; content: string; tags?: string[] }>) => {
+    if (items.length === 0) return;
+    const newNotes: Note[] = items.map(item => ({
+      id: crypto.randomUUID(),
+      title: item.title,
+      content: item.content,
+      updatedAt: Date.now(),
+      tags: item.tags || [],
+      type: 'note',
+    }));
+    setNotes(prevNotes => [...newNotes, ...prevNotes]);
+    setActiveNoteId(newNotes[0].id);
+  };
+
   const updateNote = (id: string, updates: Partial<Note>) => {
     setNotes(prevNotes => {
         const noteToUpdate = prevNotes.find(note => note.id === id);
@@ -119,7 +134,7 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const activeNote = notes.find(n => n.id === activeNoteId);
 
   return (
-    <NotesContext.Provider value={{ notes, activeNoteId, setActiveNoteId, addNote, addVoiceMemo, updateNote, deleteNote, importNote, activeNote }}>
+    <NotesContext.Provider value={{ notes, activeNoteId, setActiveNoteId, addNote, addVoiceMemo, updateNote, deleteNote, importNote, importMultipleNotes, activeNote }}>
       {children}
     </NotesContext.Provider>
   );

@@ -12,6 +12,10 @@ export interface AIConfig {
 export interface ChatMessage {
   role: 'user' | 'system' | 'assistant';
   content: string;
+  audio?: {
+    mimeType: string;
+    data: string; // Base64 data without data URL scheme prefix
+  };
 }
 
 export interface OllamaModel {
