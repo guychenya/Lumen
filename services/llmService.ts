@@ -109,7 +109,11 @@ export class LLMService {
                 return { success: true, message: `${provider.charAt(0).toUpperCase() + provider.slice(1)} API is valid.`, models };
             }
             const errorText = await res.text();
-            return { success: false, message: `${provider} Error: ${res.status} ${res.statusText} - ${errorText.slice(0, 100)}` };
+            let hint = '';
+            if (res.status === 401 && errorText.includes('invalid_api_key')) {
+                hint = " Double check that your API key is correct and active.";
+            }
+            return { success: false, message: `${provider} Error: ${res.status} ${res.statusText} - ${errorText.slice(0, 100)}.${hint}` };
         } catch (e: any) {
             return { success: false, message: `Network Error (CORS?): ${e.message}` };
         }

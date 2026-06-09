@@ -115,7 +115,11 @@ const EditorWorkspace = () => {
         contentToDisplay = htmlToMarkdown(contentToDisplay);
     }
     // Filter out image reference definitions for a cleaner editor view.
-    return contentToDisplay.replace(imageRefRegex, '').trim();
+    let stripped = contentToDisplay.replace(imageRefRegex, '');
+    
+    // We only trim at the very end to avoid stripping trailing newlines/spaces 
+    // when the user is actively typing them. Actually, safest not to trim at all.
+    return stripped;
   }, [activeNote]);
 
 
@@ -123,8 +127,8 @@ const EditorWorkspace = () => {
       if (activeNote) {
           // Re-attach the image reference definitions that are visually hidden.
           const imageRefs = activeNote.content.match(imageRefRegex) || [];
-          const fullContent = val.trim() + (imageRefs.length > 0 ? '\n\n' + imageRefs.join('\n') : '');
-          updateNote(activeNote.id, { content: fullContent.trim() });
+          const fullContent = val + (imageRefs.length > 0 ? '\n\n' + imageRefs.join('\n') : '');
+          updateNote(activeNote.id, { content: fullContent });
       }
   };
 
@@ -336,6 +340,54 @@ const EditorWorkspace = () => {
         // This prevents the menu from getting "stuck" and blocking the Enter key.
         if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.length === 1) {
             setSlashMenuOpen(false);
+        }
+    }
+
+    // Markdown Tab support
+    if (e.key === 'Tab') {
+        e.preventDefault();
+        insertTextAtCursor('  ');
+    }
+
+    // Markdown list/quote auto-continuation on Enter
+    if (e.key === 'Enter' && !slashMenuOpen && textareaRef.current) {
+        const val = textareaRef.current.value;
+        const start = textareaRef.current.selectionStart;
+        
+        const beforeCursor = val.substring(0, start);
+        const currentLine = beforeCursor.split('\n').pop() || '';
+        
+        // Find leading spaces or list markers (e.g., "- ", "* ", "1. ", "> ")
+        const match = currentLine.match(/^(\s*(?:- |\* |\d+\. |> )?)/);
+        
+        if (match && match[0]) {
+            // Check if current list item is empty. If so, un-indent/remove it instead of continuing
+            if (currentLine.trim() === match[0].trim() && match[0].trim() !== '') {
+               e.preventDefault();
+               const withoutMarker = val.substring(0, start - match[0].length) + val.substring(start);
+               handleContentChange(withoutMarker);
+               
+               // Restore cursor after removal
+               setTimeout(() => {
+                   if (textareaRef.current) {
+                        textareaRef.current.focus();
+                        textareaRef.current.setSelectionRange(start - match[0].length, start - match[0].length);
+                   }
+               }, 0);
+               return;
+            }
+
+            // Otherwise, continue the list marker
+            e.preventDefault();
+            // Handle basic numeric list incrementation safely
+            let nextLinePrefix = match[0];
+            const numMatch = match[0].match(/(\s*)(\d+)\. /);
+            if (numMatch) {
+                const nextNum = parseInt(numMatch[2], 10) + 1;
+                nextLinePrefix = `${numMatch[1]}${nextNum}. `;
+            }
+            
+            insertTextAtCursor('\n' + nextLinePrefix);
         }
     }
 
