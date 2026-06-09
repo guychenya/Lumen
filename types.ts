@@ -37,4 +37,5 @@ export interface Note {
   type?: 'note' | 'voice';
   audioData?: string; // base64 audio string/data URL
   duration?: number; // audio duration in seconds
+  folder?: string; // Optional folder name
 }

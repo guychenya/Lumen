@@ -12,8 +12,8 @@ interface NotesContextType {
   addVoiceMemo: (title: string, content: string, audioData?: string, duration?: number, tags?: string[]) => void;
   updateNote: (id: string, updates: Partial<Note>) => void;
   deleteNote: (id: string) => void;
-  importNote: (title: string, content: string, tags?: string[]) => void;
-  importMultipleNotes: (items: Array<{ title: string; content: string; tags?: string[] }>) => void;
+  importNote: (title: string, content: string, tags?: string[], folder?: string) => void;
+  importMultipleNotes: (items: Array<{ title: string; content: string; tags?: string[]; folder?: string }>) => void;
   activeNote: Note | undefined;
 }
 
@@ -86,7 +86,7 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     setActiveNoteId(newMemo.id);
   };
   
-  const importNote = (title: string, content: string, tags?: string[]) => {
+  const importNote = (title: string, content: string, tags?: string[], folder?: string) => {
     const newNote: Note = {
       id: crypto.randomUUID(),
       title,
@@ -94,12 +94,13 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       updatedAt: Date.now(),
       tags: tags || [],
       type: 'note',
+      folder,
     };
     setNotes(prevNotes => [newNote, ...prevNotes]);
     setActiveNoteId(newNote.id);
   };
 
-  const importMultipleNotes = (items: Array<{ title: string; content: string; tags?: string[] }>) => {
+  const importMultipleNotes = (items: Array<{ title: string; content: string; tags?: string[]; folder?: string }>) => {
     if (items.length === 0) return;
     const newNotes: Note[] = items.map(item => ({
       id: crypto.randomUUID(),
@@ -108,6 +109,7 @@ export const NotesProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       updatedAt: Date.now(),
       tags: item.tags || [],
       type: 'note',
+      folder: item.folder,
     }));
     setNotes(prevNotes => [...newNotes, ...prevNotes]);
     setActiveNoteId(newNotes[0].id);

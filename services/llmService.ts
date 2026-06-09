@@ -255,10 +255,21 @@ export class LLMService {
                 return m.role === 'user' || m.role === 'assistant';
             });
 
-            const contents = chatMessages.map(m => ({
-                role: m.role === 'assistant' ? 'model' : 'user',
-                parts: [{ text: m.content }]
-            }));
+            const contents = chatMessages.map(m => {
+                const parts: any[] = [{ text: m.content }];
+                if (m.audio) {
+                    parts.push({
+                        inlineData: {
+                            data: m.audio.data,
+                            mimeType: m.audio.mimeType
+                        }
+                    });
+                }
+                return {
+                    role: m.role === 'assistant' ? 'model' : 'user',
+                    parts
+                };
+            });
 
             const responseStream = await ai.models.generateContentStream({
                 model,

@@ -219,7 +219,7 @@ export const VoiceMemoPlayer: React.FC<VoiceMemoPlayerProps> = ({ note, onUpdate
               </div>
               <div>
                 <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest block">Voice Recording</span>
-                <h1 className="text-xl font-bold text-gray-900 dark:text-white mt-0.5">{note.title}</h1>
+                <h1 className="text-lg font-semibold text-gray-900 dark:text-white mt-0.5">{note.title}</h1>
               </div>
             </div>
 

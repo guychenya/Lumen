@@ -312,8 +312,8 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
     // Combine final and any leftover interim
     const fullText = (finalTranscript + ' ' + interimTranscript).trim();
     
-    if (!fullText) {
-        // Even if no speech was transcribed (Chrome iframe limits, silence, etc), STILL save the voice memo!
+    if (!fullText && !base64Audio) {
+        // Even if no speech was transcribed (Chrome iframe limits, silence, etc), and no raw audio is present, STILL save the voice memo!
         if (saveMode === 'voice') {
             const title = `Voice Memo - ${new Date().toLocaleDateString()}`;
             addVoiceMemo(title, "Empty voice recording (or untranscribed audio).", base64Audio, recordDuration || 1, ['voice']);
@@ -342,23 +342,54 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
     setAiResponse(''); 
     const service = new LLMService(config);
     
-    const prompt = `
-      I have recorded the following voice note:
+    let prompt = '';
+    if (textToProcess) {
+      prompt = `
+      I have recorded a voice note. Here is a rough draft transcription from the device's basic speech visualizer:
       "${textToProcess}"
 
-      Your task is to transcribe and lightly format this text into Markdown.
+      Your task is to listen to the attached audio file (if provided) and use the rough draft transcript to produce a clean, fully accurate transcription formatted into Markdown.
       Rules:
-      1. Correct basic grammar and spelling mistakes.
+      1. Correct basic grammar, punctuation, and spelling mistakes.
       2. If the user is clearly dictating a structure (like "Heading: Plan"), use Markdown headers (#).
       3. If the user is listing items, use bullet points (-).
       4. DO NOT create a checklist or todo list unless the user explicitly says "create a checklist" or "todo".
       5. If the text is short or conversational, just return it as a clean paragraph.
       6. Output ONLY the Markdown text.
-    `;
+      `;
+    } else {
+      prompt = `
+      I have recorded a voice note. Please listen to the attached audio file and transcribe it fully and accurately, formatting the final result into Markdown.
+      Rules:
+      1. Correct basic grammar, punctuation, and spelling mistakes.
+      2. Use appropriate Markdown formatting (headers, bullet points) to structure the transcribed text naturally.
+      3. DO NOT create a checklist or todo list unless the user explicitly dictates it.
+      4. If the text is short or conversational, just return it as a clean paragraph.
+      5. Output ONLY the Markdown text. If the audio is completely silent or has no speech, output: "No speech detected in recording."
+      `;
+    }
+
+    let audioMessagePart: any = undefined;
+    if (base64AudioContent && base64AudioContent.startsWith('data:')) {
+      const match = base64AudioContent.match(/^data:([^;]+);base64,(.*)$/);
+      if (match) {
+        audioMessagePart = {
+          mimeType: match[1],
+          data: match[2]
+        };
+      }
+    }
 
     try {
         let fullResult = '';
-        const generator = service.streamResponse([{ role: 'user', content: prompt }]);
+        const messages: any[] = [
+          {
+            role: 'user',
+            content: prompt,
+            audio: audioMessagePart
+          }
+        ];
+        const generator = service.streamResponse(messages);
         for await (const chunk of generator) {
             fullResult += chunk;
             setAiResponse(prev => prev + chunk); // Live update
@@ -377,11 +408,14 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
     } catch (e) {
         console.error("AI error, saving fallback raw text:", e);
         // Fallback: Even if AI stream fails, still save the raw user voice transcript
+        const fallbackText = textToProcess || "Untranscribed raw audio.";
         if (saveMode === 'voice') {
-            const title = `Voice: ${textToProcess.replace(/[#\n\-\*]/g, ' ').split(/\s+/).filter(Boolean).slice(0, 5).join(' ')}...`;
-            addVoiceMemo(title, textToProcess, base64AudioContent, durationSecs || 1, ['voice']);
+            const title = fallbackText !== "Untranscribed raw audio."
+              ? `Voice: ${fallbackText.replace(/[#\n\-\*]/g, ' ').split(/\s+/).filter(Boolean).slice(0, 5).join(' ')}...`
+              : `Voice Memo - ${new Date().toLocaleDateString()}`;
+            addVoiceMemo(title, fallbackText, base64AudioContent, durationSecs || 1, ['voice']);
         } else {
-            onInsert(textToProcess);
+            onInsert(fallbackText);
         }
         setStage('error');
         setErrorMsg("AI processing failed, but your transcription was saved as a note.");
