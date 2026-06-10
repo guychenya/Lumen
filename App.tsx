@@ -2846,15 +2846,30 @@ Instructions:
 
 // FIX: Added the 'App' wrapper component definition which was missing.
 // This ensures that the context providers correctly wrap the application.
+class ErrorBoundary extends React.Component<{children: React.ReactNode}, {error: string|null}> {
+  constructor(props: any) { super(props); this.state = {error: null}; }
+  static getDerivedStateFromError(e: any) { return {error: String(e)}; }
+  render() {
+    if (this.state.error) return (
+      <div style={{padding:40,fontFamily:'monospace',background:'#fff',color:'red',whiteSpace:'pre-wrap'}}>
+        <b>App crashed:</b>{'\n'}{this.state.error}
+      </div>
+    );
+    return this.props.children;
+  }
+}
+
 const App: React.FC = () => {
   return (
-    <ThemeProvider>
-      <AIProvider>
-        <NotesProvider>
-          <EditorWorkspace />
-        </NotesProvider>
-      </AIProvider>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <AIProvider>
+          <NotesProvider>
+            <EditorWorkspace />
+          </NotesProvider>
+        </AIProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 };
 
