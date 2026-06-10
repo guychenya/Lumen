@@ -25,19 +25,16 @@ export class LLMService {
   }
 
   private getCleanBaseUrl(url?: string): string {
+    // In browser, always route Ollama through the server proxy
+    if (typeof window !== 'undefined') return '/api/ollama';
     if (!url) return 'http://127.0.0.1:11434';
     let clean = url.replace(/\/$/, '');
-    if (clean.includes('localhost')) {
-        clean = clean.replace('localhost', '127.0.0.1');
-    }
+    if (clean.includes('localhost')) clean = clean.replace('localhost', '127.0.0.1');
     return clean;
   }
 
-  private checkMixedContent(url: string): string | null {
-    if (typeof window !== 'undefined' && window.location.protocol === 'https:' && url.includes('http:')) {
-        return "Security Error: You are accessing this app via HTTPS but trying to connect to an insecure HTTP server (Ollama). Browsers block this. Please run this web app on HTTP (http://localhost:...) or use a tunneling service (ngrok) for Ollama.";
-    }
-    return null;
+  private checkMixedContent(_url: string): string | null {
+    return null; // proxy handles mixed content
   }
 
   /**

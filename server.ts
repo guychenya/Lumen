@@ -81,7 +81,37 @@ app.post("/api/transcribe", upload.single("file"), async (req, res) => {
   }
 });
 
-// Vite middleware for development or Static serving for Production
+const OLLAMA_URL = process.env.OLLAMA_URL || "http://localhost:11434";
+
+// 4. Ollama proxy — forwards browser requests to local Ollama over secure channel
+app.all("/api/ollama/*", async (req, res) => {
+  try {
+    const ollamaPath = req.path.replace("/api/ollama", "");
+    const url = `${OLLAMA_URL}${ollamaPath}`;
+    const body = req.method !== "GET" && req.method !== "HEAD" ? JSON.stringify(req.body) : undefined;
+    const upstream = await fetch(url, {
+      method: req.method,
+      headers: { "Content-Type": "application/json" },
+      body,
+    });
+    res.status(upstream.status);
+    upstream.headers.forEach((v, k) => { if (!["transfer-encoding","connection"].includes(k)) res.setHeader(k, v); });
+    const reader = (upstream.body as any)?.getReader?.();
+    if (reader) {
+      const pump = async () => {
+        const { done, value } = await reader.read();
+        if (done) { res.end(); return; }
+        res.write(Buffer.from(value));
+        pump();
+      };
+      pump();
+    } else {
+      res.send(await upstream.text());
+    }
+  } catch (error: any) {
+    res.status(502).json({ error: `Ollama proxy error: ${error.message}` });
+  }
+});
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
