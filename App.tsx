@@ -115,6 +115,143 @@ const getCaretCoordinates = (
 
 type ViewMode = "edit" | "split" | "preview";
 
+// Animated AI Output Overlay with progressive word reveal + Gantt-style progress
+const AIOutputOverlay: React.FC<{
+  generatedText: string;
+  isGenerating: boolean;
+  onInsert: () => void;
+  onDiscard: () => void;
+}> = ({ generatedText, isGenerating, onInsert, onDiscard }) => {
+  const [displayedWords, setDisplayedWords] = React.useState<string[]>([]);
+  const [wordCount, setWordCount] = React.useState(0);
+  const [elapsed, setElapsed] = React.useState(0);
+  const prevTextRef = React.useRef('');
+  const scrollRef = React.useRef<HTMLDivElement>(null);
+
+  // Progressively reveal new words as generatedText grows
+  React.useEffect(() => {
+    const allWords = generatedText.split(/(\s+)/);
+    if (allWords.length <= displayedWords.length) return;
+    const newWords = allWords.slice(displayedWords.length);
+    let i = 0;
+    const reveal = () => {
+      if (i >= newWords.length) return;
+      // Random delay 10-60ms per token for unpredictable feel
+      const delay = 10 + Math.random() * 50;
+      setTimeout(() => {
+        setDisplayedWords(prev => [...prev, newWords[i]]);
+        setWordCount(prev => prev + 1);
+        i++;
+        reveal();
+      }, delay);
+    };
+    reveal();
+  }, [generatedText]);
+
+  // Reset on new generation
+  React.useEffect(() => {
+    if (isGenerating && generatedText === '') {
+      setDisplayedWords([]);
+      setWordCount(0);
+      setElapsed(0);
+      prevTextRef.current = '';
+    }
+  }, [isGenerating, generatedText]);
+
+  // Elapsed timer
+  React.useEffect(() => {
+    if (!isGenerating) return;
+    const t = setInterval(() => setElapsed(e => e + 0.1), 100);
+    return () => clearInterval(t);
+  }, [isGenerating]);
+
+  // Auto-scroll
+  React.useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [displayedWords]);
+
+  const totalWords = generatedText.split(/\s+/).filter(Boolean).length;
+  const progress = totalWords > 0 ? Math.min(100, (displayedWords.filter(w => w.trim()).length / totalWords) * 100) : 0;
+
+  // Gantt-style phases
+  const phases = [
+    { label: 'Thinking', pct: 15, color: '#8b5cf6' },
+    { label: 'Drafting', pct: 55, color: '#10b981' },
+    { label: 'Refining', pct: 85, color: '#3b82f6' },
+    { label: 'Done', pct: 100, color: '#f59e0b' },
+  ];
+  const currentPhase = phases.find(p => progress <= p.pct) || phases[phases.length - 1];
+
+  return (
+    <div className="absolute bottom-6 right-6 w-[420px] z-50 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="rounded-xl overflow-hidden border border-gray-200 dark:border-[#2a2a2a] shadow-2xl bg-white dark:bg-[#111]">
+        
+        {/* Header with phase indicator */}
+        <div className="flex items-center justify-between px-4 py-2.5 bg-gradient-to-r from-emerald-500/10 to-blue-500/10 border-b border-gray-100 dark:border-[#222]">
+          <div className="flex items-center gap-2">
+            <Sparkles className={`w-3.5 h-3.5 text-emerald-500 ${isGenerating ? 'animate-spin' : ''}`} />
+            <span className="text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300">AI Analysis</span>
+            {isGenerating && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold border animate-pulse"
+                style={{ color: currentPhase.color, borderColor: currentPhase.color + '44', background: currentPhase.color + '11' }}>
+                {currentPhase.label}
+              </span>
+            )}
+          </div>
+          <span className="text-[10px] font-mono text-gray-400">{elapsed.toFixed(1)}s · {totalWords}w</span>
+        </div>
+
+        {/* Gantt progress bar */}
+        <div className="px-4 pt-3 pb-1">
+          <div className="flex gap-0.5 h-1.5 rounded-full overflow-hidden bg-gray-100 dark:bg-[#222]">
+            {phases.map((p, i) => {
+              const prev = i === 0 ? 0 : phases[i-1].pct;
+              const segWidth = p.pct - prev;
+              const filled = Math.max(0, Math.min(segWidth, progress - prev));
+              return (
+                <div key={p.label} className="relative flex-1 rounded-full overflow-hidden bg-gray-200 dark:bg-[#2a2a2a]"
+                  style={{ flex: segWidth }}>
+                  <div className="h-full transition-all duration-300 rounded-full"
+                    style={{ width: `${(filled / segWidth) * 100}%`, background: p.color }} />
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex justify-between mt-1">
+            {phases.map(p => (
+              <span key={p.label} className="text-[9px] font-mono"
+                style={{ color: progress >= p.pct ? p.color : '#6b7280' }}>{p.label}</span>
+            ))}
+          </div>
+        </div>
+
+        {/* Progressive text output */}
+        <div ref={scrollRef} className="max-h-52 overflow-y-auto px-4 py-2 text-sm text-gray-800 dark:text-gray-200 leading-relaxed custom-scrollbar">
+          <span className="whitespace-pre-wrap">
+            {displayedWords.map((word, i) => (
+              <span key={i} className="animate-in fade-in duration-200">{word}</span>
+            ))}
+          </span>
+          {isGenerating && (
+            <span className="inline-block w-1.5 h-3.5 bg-emerald-500 ml-0.5 rounded-sm animate-pulse align-middle" />
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-2 justify-end px-4 py-2.5 border-t border-gray-100 dark:border-[#222] bg-gray-50/50 dark:bg-[#0d0d0d]">
+          <Button size="sm" variant="ghost" onClick={onDiscard} disabled={isGenerating} className="h-7 text-xs">
+            Discard
+          </Button>
+          <Button size="sm" onClick={onInsert} disabled={isGenerating}
+            className="bg-emerald-600 hover:bg-emerald-700 h-7 text-xs">
+            Insert
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const EditorWorkspace = () => {
   const { setSettingsOpen, config, connectionStatus } = useAI();
   const {
@@ -2523,40 +2660,12 @@ Instructions:
 
           {/* AI Output Overlay */}
           {(isGenerating || generatedText) && (
-            <div className="absolute bottom-6 right-6 w-96 z-50 animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <div className="p-1 rounded-xl bg-gradient-to-r from-emerald-500/20 to-blue-500/20 backdrop-blur-md border border-gray-200 dark:border-[#333] shadow-2xl">
-                <div className="bg-white/80 dark:bg-[#161616] rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-3 text-emerald-600 dark:text-emerald-400 text-xs font-bold uppercase tracking-wider">
-                    <Sparkles className="w-3 h-3" /> AI Analysis
-                  </div>
-                  <div className="max-h-60 overflow-y-auto text-sm text-gray-800 dark:text-gray-200 leading-relaxed whitespace-pre-wrap mb-3 custom-scrollbar">
-                    {generatedText}
-                    {isGenerating && (
-                      <span className="inline-block w-1 h-3 bg-emerald-500 ml-1 animate-pulse" />
-                    )}
-                  </div>
-                  <div className="flex gap-2 justify-end pt-2 border-t border-gray-200 dark:border-[#333]">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={handleAIDiscard}
-                      disabled={isGenerating}
-                      className="h-7 text-xs"
-                    >
-                      Discard
-                    </Button>
-                    <Button
-                      size="sm"
-                      className="bg-emerald-600 hover:bg-emerald-700 dark:hover:bg-emerald-500 h-7 text-xs"
-                      onClick={handleAIInsert}
-                      disabled={isGenerating}
-                    >
-                      Insert
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <AIOutputOverlay
+              generatedText={generatedText}
+              isGenerating={isGenerating}
+              onInsert={handleAIInsert}
+              onDiscard={handleAIDiscard}
+            />
           )}
         </div>
       </div>
