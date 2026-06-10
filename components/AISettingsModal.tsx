@@ -105,13 +105,9 @@ export const AISettingsModal: React.FC = () => {
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
-  // Check for mixed content
+  // No mixed content check needed - Ollama is proxied through the server
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
-      setIsMixedContent(localConfig.baseUrl?.startsWith('http://') || false);
-    } else {
-      setIsMixedContent(false);
-    }
+    setIsMixedContent(false);
   }, [localConfig.baseUrl]);
 
   // When modal opens, sync local state
@@ -192,29 +188,19 @@ export const AISettingsModal: React.FC = () => {
 
 
   const fetchOllamaModels = async (currentConfig: AIConfig) => {
-    if (!currentConfig.baseUrl) {
-      setIsLoadingModels(false);
-      return;
-    };
     try {
-      const service = new LLMService(currentConfig);
-      const result = await service.verifyConnection();
-      if (result.success) {
-          const cleanUrl = currentConfig.baseUrl.replace(/\/$/, '').replace('localhost', '127.0.0.1');
-          const res = await fetch(`${cleanUrl}/api/tags`);
-          const data: OllamaTagsResponse = await res.json();
-          const models = data.models.map(m => m.name);
-          setAvailableModels(models);
-           if (!models.includes(currentConfig.modelName) && models.length > 0) {
-              setLocalConfig(prev => ({ ...prev, modelName: models[0] }));
-           }
-      } else {
-          setAvailableModels(['llama3', 'llama3.1', 'gemma2', 'mistral', 'phi3']); // Fallback common Ollama models
+      const res = await fetch('/api/ollama/api/tags');
+      const data: OllamaTagsResponse = await res.json();
+      const models = data.models.map(m => m.name);
+      setAvailableModels(models);
+      if (!models.includes(currentConfig.modelName) && models.length > 0) {
+        setLocalConfig(prev => ({ ...prev, modelName: models[0] }));
       }
     } catch (error) {
       console.warn("Failed to fetch Ollama models:", error);
-      setAvailableModels(['llama3', 'llama3.1', 'gemma2', 'mistral', 'phi3']); // Fallback
+      setAvailableModels(['llama3', 'llama3.1', 'gemma2', 'mistral', 'phi3']);
     }
+    setIsLoadingModels(false);
   };
 
   const handleTestConnection = async () => {
