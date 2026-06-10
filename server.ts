@@ -3,9 +3,13 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { LLMService } from "./services/llmService";
 import { AIConfig, ChatMessage } from "./types";
+import multer from "multer";
+import FormData from "form-data";
 
 const app = express();
 const PORT = 3000;
+const WHISPER_URL = process.env.WHISPER_URL || "http://localhost:8080";
+const upload = multer({ storage: multer.memoryStorage() });
 
 app.use(express.json());
 
@@ -53,6 +57,27 @@ app.post("/api/ai/stream", async (req, res) => {
       res.write(`\n[Server Error: ${error.message || "Internal streaming error."}]`);
       res.end();
     }
+  }
+});
+
+// 3. Transcription Endpoint (proxies audio to local Whisper server)
+app.post("/api/transcribe", upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No audio file provided" });
+    const form = new FormData();
+    form.append("file", req.file.buffer, { filename: req.file.originalname || "audio.webm", contentType: req.file.mimetype });
+    form.append("response_format", "json");
+    const response = await fetch(`${WHISPER_URL}/inference`, {
+      method: "POST",
+      body: form as any,
+      headers: form.getHeaders(),
+    });
+    if (!response.ok) throw new Error(`Whisper error: ${response.statusText}`);
+    const data = await response.json() as any;
+    res.json({ text: data.text || "" });
+  } catch (error: any) {
+    console.error("Transcription error:", error);
+    res.status(500).json({ error: error.message });
   }
 });
 

@@ -87,23 +87,15 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
     if (stage !== 'error') setStage('idle');
   };
 
-  const initSpeech = () => {
-    if (typeof window === 'undefined') return null;
+  const initSpeech = () => null; // replaced by Whisper STT
 
-    // @ts-ignore
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    
-    if (!SpeechRecognition) {
-      setStage('error');
-      setErrorMsg("This browser does not support Voice Mode. Please use Google Chrome, Edge, or Safari.");
-      return null;
-    }
-
-    const recognition = new SpeechRecognition();
-    recognition.continuous = false; 
-    recognition.interimResults = true; 
-    recognition.lang = 'en-US';
-    return recognition;
+  const transcribeWithWhisper = async (audioBlob: Blob): Promise<string> => {
+    const formData = new FormData();
+    formData.append("file", audioBlob, "audio.webm");
+    const res = await fetch("/api/transcribe", { method: "POST", body: formData });
+    if (!res.ok) throw new Error("Transcription failed");
+    const data = await res.json();
+    return data.text || "";
   };
 
   const startRecording = async () => {
@@ -112,12 +104,6 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
       if (!stream) {
           stream = await navigator.mediaDevices.getUserMedia({ audio: true });
           setMediaStream(stream);
-      }
-      
-      const recognition = initSpeech();
-      if (!recognition) {
-          stream?.getTracks().forEach(t => t.stop());
-          return;
       }
 
       // Initialize MediaRecorder to save actual voice audio
@@ -189,59 +175,6 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
         setRecordDuration(prev => prev + 1);
       }, 1000);
 
-      recognition.onresult = (event: any) => {
-        if (!shouldBeRecording.current) return;
-
-        let interim = '';
-        let finalChunk = '';
-
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-            if (event.results[i].isFinal) {
-                finalChunk += event.results[i][0].transcript;
-            } else {
-                interim += event.results[i][0].transcript;
-            }
-        }
-
-        if (finalChunk) {
-            setFinalTranscript(prev => {
-                const spacer = prev ? ' ' : '';
-                return prev + spacer + finalChunk;
-            });
-        }
-        setInterimTranscript(interim);
-      };
-
-      recognition.onspeechstart = () => setIsSpeechDetected(true);
-      recognition.onspeechend = () => setIsSpeechDetected(false);
-
-      recognition.onerror = (event: any) => {
-        if (event.error === 'no-speech') return;
-        
-        console.warn("Speech recognition error:", event.error);
-        
-        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-             cleanupResources();
-             setStage('error');
-             setErrorMsg("Microphone access denied.");
-        } else if (event.error === 'network') {
-             if (!navigator.userAgent.includes('Chrome')) {
-                 setStage('error');
-                 setErrorMsg("Connection failed. This browser often blocks speech API. Please try Chrome.");
-             }
-        }
-      };
-
-      recognition.onend = () => {
-        if (shouldBeRecording.current && stage !== 'error') {
-            try {
-                recognition.start();
-            } catch (e) {}
-        }
-      };
-
-      recognition.start();
-      recognitionRef.current = recognition;
       setStage('recording');
 
     } catch (err) {
@@ -293,15 +226,11 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
     
     if (recognitionRef.current) {
         recognitionRef.current.onend = null;
-        try {
-            recognitionRef.current.stop();
-        } catch (e) {}
+        try { recognitionRef.current.stop(); } catch (e) {}
     }
 
-    // Explicitly transition to processing so the visualizer handles it gracefully
     setStage('processing');
 
-    // Wait for the recording to stop and Base64 format to be fully generated
     const base64Audio = await stopRecordingAndGetAudio();
     
     if (mediaStream) {
@@ -309,11 +238,22 @@ export const VoiceModeModal: React.FC<Props> = ({ isOpen, onClose, onInsert }) =
     }
     setMediaStream(null);
 
-    // Combine final and any leftover interim
-    const fullText = (finalTranscript + ' ' + interimTranscript).trim();
+    // Transcribe via Whisper
+    let fullText = '';
+    try {
+      const mimeType = mediaRecorderRef.current?.mimeType || 'audio/webm';
+      const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+      if (audioBlob.size > 0) {
+        setInterimTranscript('Transcribing...');
+        fullText = await transcribeWithWhisper(audioBlob);
+        setFinalTranscript(fullText);
+        setInterimTranscript('');
+      }
+    } catch (err) {
+      console.warn("Whisper transcription failed:", err);
+    }
     
     if (!fullText && !base64Audio) {
-        // Even if no speech was transcribed (Chrome iframe limits, silence, etc), and no raw audio is present, STILL save the voice memo!
         if (saveMode === 'voice') {
             const title = `Voice Memo - ${new Date().toLocaleDateString()}`;
             addVoiceMemo(title, "Empty voice recording (or untranscribed audio).", base64Audio, recordDuration || 1, ['voice']);
