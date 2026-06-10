@@ -84,7 +84,7 @@ app.post("/api/transcribe", upload.single("file"), async (req, res) => {
 const OLLAMA_URL = process.env.OLLAMA_URL || "http://localhost:11434";
 
 // 4. Ollama proxy — forwards browser requests to local Ollama over secure channel
-app.all("/api/ollama/*", async (req, res) => {
+app.all("/api/ollama/{*path}", async (req, res) => {
   try {
     const ollamaPath = req.path.replace("/api/ollama", "");
     const url = `${OLLAMA_URL}${ollamaPath}`;
