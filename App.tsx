@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { AIProvider, useAI } from "./context/AIContext";
 import { NotesProvider, useNotes } from "./context/NotesContext";
-import { useTheme } from "./context/ThemeContext";
+import { ThemeProvider, useTheme } from "./context/ThemeContext";
 import { AISettingsModal } from "./components/AISettingsModal";
 import { Button } from "./components/ui/Button";
 import { LLMService } from "./services/llmService";
@@ -2848,11 +2848,13 @@ Instructions:
 // This ensures that the context providers correctly wrap the application.
 const App: React.FC = () => {
   return (
-    <AIProvider>
-      <NotesProvider>
-        <EditorWorkspace />
-      </NotesProvider>
-    </AIProvider>
+    <ThemeProvider>
+      <AIProvider>
+        <NotesProvider>
+          <EditorWorkspace />
+        </NotesProvider>
+      </AIProvider>
+    </ThemeProvider>
   );
 };
 
