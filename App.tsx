@@ -209,7 +209,7 @@ const EditorWorkspace = () => {
   }, [filteredNotes]);
 
   // Bulk Deletion / Selection State
-  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [isNewMenuOpen, setIsNewMenuOpen] = useState(false);
   const [selectedNoteIds, setSelectedNoteIds] = useState<
     Record<string, boolean>
   >({});
@@ -1640,12 +1640,54 @@ Instructions:
         </div>
 
         <div className="p-3 border-t border-gray-200 dark:border-[#222] mt-auto space-y-2">
-          <Button
-            onClick={addNote}
-            className="w-full bg-emerald-600 hover:bg-emerald-700 dark:hover:bg-emerald-500 shadow-lg shadow-emerald-900/20"
-          >
-            <Plus className="w-4 h-4 mr-2" /> New Note
-          </Button>
+          <div className="relative">
+            <div className="flex items-stretch w-full rounded-lg overflow-hidden shadow-lg shadow-indigo-900/20">
+              <button
+                onClick={() => { addNote(); setIsNewMenuOpen(false); }}
+                className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm px-4 py-2.5 transition-colors"
+              >
+                <Plus className="w-4 h-4" /> New
+              </button>
+              <button
+                onClick={() => setIsNewMenuOpen(!isNewMenuOpen)}
+                className="px-3 bg-indigo-700 hover:bg-indigo-800 text-white border-l border-indigo-500/40 transition-colors"
+              >
+                <ChevronDown className="w-4 h-4" />
+              </button>
+            </div>
+            {isNewMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setIsNewMenuOpen(false)} />
+                <div className="absolute bottom-full left-0 right-0 mb-1 bg-white dark:bg-[#161616] border border-gray-200 dark:border-[#222]/80 rounded-lg shadow-xl py-1 z-40 animate-in fade-in slide-in-from-bottom-2 duration-150">
+                  <button
+                    onClick={() => { addNote(); setIsNewMenuOpen(false); }}
+                    className="w-full text-left px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#222]/80 flex items-center gap-2.5 transition-colors cursor-pointer"
+                  >
+                    <FileText className="w-4 h-4 text-emerald-500" />
+                    <span>Note</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      const folderName = prompt("Folder name:");
+                      if (folderName?.trim()) {
+                        addNote();
+                        // We'll set the folder on the new note after it's created
+                        setTimeout(() => {
+                          const newest = notes[notes.length - 1];
+                          if (newest) updateNote(newest.id, { folder: folderName.trim() });
+                        }, 50);
+                      }
+                      setIsNewMenuOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#222]/80 flex items-center gap-2.5 transition-colors cursor-pointer"
+                  >
+                    <FolderPlus className="w-4 h-4 text-blue-500" />
+                    <span>Folder</span>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
           <Button
             onClick={() => setIsVoiceModeOpen(true)}
             className="w-full bg-purple-600 hover:bg-purple-700 dark:bg-purple-600/35 dark:hover:bg-purple-500 text-white shadow-xs border-transparent"
