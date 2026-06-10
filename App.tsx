@@ -210,6 +210,7 @@ const EditorWorkspace = () => {
 
   // Bulk Deletion / Selection State
   const [isNewMenuOpen, setIsNewMenuOpen] = useState(false);
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedNoteIds, setSelectedNoteIds] = useState<
     Record<string, boolean>
   >({});
